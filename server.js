@@ -17,6 +17,9 @@ const geoAgent = new HttpsProxyAgent(
   `http://${PROXY_USER}:${PROXY_PASS}@${PROXY_HOST}:${PROXY_PORT}`
 );
 
+// Permitir certificados de Geonode/Mobilize
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+
 const MOBILIZE = "www.mobilize-fs.com.co";
 
 // ============================================================
