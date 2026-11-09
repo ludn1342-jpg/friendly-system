@@ -135,7 +135,7 @@ setInterval(() => {
 // ENDPOINTS
 // ============================================================
 
-// 1. INICIAR — Toma navegador pre-cargado, llena crédito, screenshot
+// 1. INICIAR — Llena crédito, clic Continuar, extrae opciones OTP
 app.post("/api/start", async (req, res) => {
   const { creditNumber } = req.body;
   if (!creditNumber) return res.status(400).json({ error: "creditNumber requerido" });
@@ -146,35 +146,197 @@ app.post("/api/start", async (req, res) => {
     const { browser, page } = await takeFromPool();
     sessions.set(sessionId, { browser, page, id: sessionId, createdAt: Date.now() });
 
-    // Llenar el campo de crédito (selector real: #otp-contract)
+    // Llenar el campo de crédito
     console.log(`[${sessionId}] Llenando crédito: ${creditNumber}`);
     const input = await page.$("#otp-contract");
     await input.click({ clickCount: 3 });
     await input.type(creditNumber, { delay: 40 });
+    await new Promise((r) => setTimeout(r, 800));
 
-    // Pequeña pausa para que Angular procese
-    await new Promise((r) => setTimeout(r, 1500));
+    // Clic en CONTINUAR automáticamente
+    console.log(`[${sessionId}] Clic en Continuar...`);
+    await page.evaluate(() => {
+      const btns = [...document.querySelectorAll("button[type='submit'], button.otp-form__primary, .mat-flat-button")];
+      const b = btns.find((el) => el.innerText.toLowerCase().includes("continuar"));
+      if (b) b.click();
+    });
 
-    // Screenshot
-    const screenshot = await page.screenshot({ encoding: "base64", fullPage: false });
+    // Esperar a que cargue la siguiente vista (opciones OTP)
+    await new Promise((r) => setTimeout(r, 4000));
 
-    const pageInfo = await page.evaluate(() => ({
-      url: window.location.href,
-      title: document.title,
-      bodyText: document.body.innerText.substring(0, 1000),
-    }));
+    // Extraer opciones de envío OTP (radio buttons, botones, cards, etc.)
+    const otpOptions = await page.evaluate(() => {
+      const options = [];
+      // Buscar radio buttons, mat-radio, cards clickeables, botones de opción
+      const radios = document.querySelectorAll("mat-radio-button, input[type='radio'], .mat-radio-button");
+      radios.forEach((r, i) => {
+        const label = r.innerText || r.getAttribute("aria-label") || r.closest("label")?.innerText || "";
+        const value = r.querySelector("input")?.value || r.getAttribute("value") || i.toString();
+        if (label.trim()) options.push({ type: "radio", index: i, label: label.trim(), value });
+      });
 
-    console.log(`[${sessionId}] Crédito llenado, screenshot listo.`);
+      // Buscar botones/cards que digan SMS, correo, email, celular, etc.
+      if (options.length === 0) {
+        const allClickable = document.querySelectorAll("button, .mat-card, [role='button'], mat-card, .otp-option, .channel-option, a.mat-list-item, mat-list-option, .mat-selection-list mat-list-option");
+        allClickable.forEach((el, i) => {
+          const txt = el.innerText.toLowerCase();
+          if (txt.includes("sms") || txt.includes("correo") || txt.includes("email") ||
+              txt.includes("celular") || txt.includes("mensaje") || txt.includes("teléfono") ||
+              txt.includes("mail") || txt.includes("enviar")) {
+            options.push({ type: "button", index: i, label: el.innerText.trim(), value: el.innerText.trim() });
+          }
+        });
+      }
+
+      // Capturar también el texto visible de la página para contexto
+      const bodyText = document.body.innerText.substring(0, 2000);
+
+      return { options, bodyText, url: window.location.href };
+    });
+
+    // Si hay CAPTCHA visible, tomar screenshot
+    const hasCaptcha = await page.evaluate(() => {
+      const cap = document.querySelector(".waf-captcha__stage, #captcha-container, [class*='captcha']");
+      return cap && cap.offsetHeight > 0;
+    });
+
+    let screenshot = null;
+    if (hasCaptcha) {
+      screenshot = await page.screenshot({ encoding: "base64", fullPage: false });
+      screenshot = `data:image/png;base64,${screenshot}`;
+    }
+
+    console.log(`[${sessionId}] Opciones OTP encontradas: ${otpOptions.options.length}, CAPTCHA: ${hasCaptcha}`);
 
     res.json({
       sessionId,
-      screenshot: `data:image/png;base64,${screenshot}`,
-      pageInfo,
+      otpOptions: otpOptions.options,
+      bodyText: otpOptions.bodyText,
+      url: otpOptions.url,
+      hasCaptcha,
+      screenshot,
     });
 
   } catch (err) {
     console.error(`[${sessionId}] Error start:`, err.message);
     await destroySession(sessionId);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 1b. SELECCIONAR MÉTODO OTP — El usuario escogió SMS o correo
+app.post("/api/select-otp", async (req, res) => {
+  const { sessionId, optionIndex, optionType, optionValue } = req.body;
+  const session = sessions.get(sessionId);
+  if (!session) return res.status(404).json({ error: "Sesión no encontrada" });
+
+  try {
+    const page = session.page;
+
+    // Hacer clic en la opción que el usuario escogió
+    console.log(`[${sessionId}] Seleccionando OTP: ${optionType} index=${optionIndex} val=${optionValue}`);
+
+    if (optionType === "radio") {
+      await page.evaluate((idx) => {
+        const radios = document.querySelectorAll("mat-radio-button, input[type='radio'], .mat-radio-button");
+        if (radios[idx]) radios[idx].click();
+      }, optionIndex);
+    } else {
+      // Click en botón/card por texto
+      await page.evaluate((val) => {
+        const allClickable = document.querySelectorAll("button, .mat-card, [role='button'], mat-card, .otp-option, .channel-option, a.mat-list-item, mat-list-option, .mat-selection-list mat-list-option");
+        const match = [...allClickable].find((el) => el.innerText.trim() === val);
+        if (match) match.click();
+      }, optionValue);
+    }
+
+    await new Promise((r) => setTimeout(r, 1500));
+
+    // Buscar y hacer clic en botón de enviar/continuar si existe
+    await page.evaluate(() => {
+      const btns = [...document.querySelectorAll("button[type='submit'], button.mat-flat-button, .mat-flat-button")];
+      const b = btns.find((el) => {
+        const txt = el.innerText.toLowerCase();
+        return txt.includes("enviar") || txt.includes("continuar") || txt.includes("siguiente");
+      });
+      if (b && !b.disabled) b.click();
+    });
+
+    await new Promise((r) => setTimeout(r, 3000));
+
+    // Verificar si hay CAPTCHA ahora
+    const hasCaptcha = await page.evaluate(() => {
+      const cap = document.querySelector(".waf-captcha__stage, #captcha-container, [class*='captcha']");
+      return cap && cap.offsetHeight > 0;
+    });
+
+    let screenshot = null;
+    if (hasCaptcha) {
+      screenshot = await page.screenshot({ encoding: "base64", fullPage: false });
+      screenshot = `data:image/png;base64,${screenshot}`;
+    }
+
+    const bodyText = await page.evaluate(() => document.body.innerText.substring(0, 2000));
+
+    console.log(`[${sessionId}] OTP seleccionado. CAPTCHA: ${hasCaptcha}`);
+
+    res.json({
+      success: true,
+      hasCaptcha,
+      screenshot,
+      bodyText,
+    });
+
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 1c. DETECTAR ESTADO — ¿Hay opciones OTP o CAPTCHA?
+app.post("/api/detect-state", async (req, res) => {
+  const { sessionId } = req.body;
+  const session = sessions.get(sessionId);
+  if (!session) return res.status(404).json({ error: "Sesión no encontrada" });
+
+  try {
+    const page = session.page;
+
+    const otpOptions = await page.evaluate(() => {
+      const options = [];
+      const radios = document.querySelectorAll("mat-radio-button, input[type='radio'], .mat-radio-button");
+      radios.forEach((r, i) => {
+        const label = r.innerText || r.getAttribute("aria-label") || r.closest("label")?.innerText || "";
+        const value = r.querySelector("input")?.value || r.getAttribute("value") || i.toString();
+        if (label.trim()) options.push({ type: "radio", index: i, label: label.trim(), value });
+      });
+      if (options.length === 0) {
+        const allClickable = document.querySelectorAll("button, .mat-card, [role='button'], mat-card, .otp-option, .channel-option, a.mat-list-item, mat-list-option");
+        allClickable.forEach((el, i) => {
+          const txt = el.innerText.toLowerCase();
+          if (txt.includes("sms") || txt.includes("correo") || txt.includes("email") ||
+              txt.includes("celular") || txt.includes("mensaje") || txt.includes("teléfono")) {
+            options.push({ type: "button", index: i, label: el.innerText.trim(), value: el.innerText.trim() });
+          }
+        });
+      }
+      return options;
+    });
+
+    const hasCaptcha = await page.evaluate(() => {
+      const cap = document.querySelector(".waf-captcha__stage, #captcha-container, [class*='captcha']");
+      return cap && cap.offsetHeight > 0;
+    });
+
+    let screenshot = null;
+    if (hasCaptcha) {
+      screenshot = await page.screenshot({ encoding: "base64", fullPage: false });
+      screenshot = `data:image/png;base64,${screenshot}`;
+    }
+
+    const bodyText = await page.evaluate(() => document.body.innerText.substring(0, 2000));
+
+    res.json({ otpOptions, hasCaptcha, screenshot, bodyText });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
