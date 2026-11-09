@@ -343,16 +343,36 @@ app.post("/api/start", async (req, res) => {
     // Extraer opciones OTP
     const otpOptions = await page.evaluate(() => {
       const options = [];
+      // Buscar mat-radio-button (Angular Material)
       const radios = document.querySelectorAll("mat-radio-button");
       radios.forEach((radio, i) => {
         const label = radio.innerText.trim();
-        if (label) options.push({ index: i, label, type: label.toLowerCase().includes("sms") ? "sms" : "email" });
+        if (label) {
+          const lower = label.toLowerCase();
+          const type = (lower.includes("celular") || lower.includes("sms") || lower.includes("móvil") || lower.includes("movil")) ? "sms" : "email";
+          options.push({ index: i, label, type });
+        }
       });
+      // Fallback: input[type=radio]
       if (options.length === 0) {
         const inputs = document.querySelectorAll("input[type='radio']");
         inputs.forEach((input, i) => {
           const label = input.closest("label")?.innerText.trim() || document.querySelector(`label[for='${input.id}']`)?.innerText.trim() || `Opción ${i + 1}`;
-          options.push({ index: i, label, type: label.toLowerCase().includes("sms") ? "sms" : "email" });
+          const lower = label.toLowerCase();
+          const type = (lower.includes("celular") || lower.includes("sms") || lower.includes("móvil")) ? "sms" : "email";
+          options.push({ index: i, label, type });
+        });
+      }
+      // Fallback: buscar elementos con texto Correo/Celular que sean clickeables
+      if (options.length === 0) {
+        const allEls = document.querySelectorAll("[role='radio'], .mat-radio-button, [class*='radio'], [class*='option']");
+        allEls.forEach((el, i) => {
+          const label = el.innerText.trim();
+          if (label && (label.includes("Correo") || label.includes("Celular") || label.includes("SMS") || label.includes("Email"))) {
+            const lower = label.toLowerCase();
+            const type = (lower.includes("celular") || lower.includes("sms")) ? "sms" : "email";
+            options.push({ index: i, label, type });
+          }
         });
       }
       return options;
@@ -378,23 +398,38 @@ app.post("/api/select-otp", async (req, res) => {
 
   try {
     const { page } = session;
+    // Click en la opción OTP seleccionada
     await page.evaluate((idx) => {
       const radios = document.querySelectorAll("mat-radio-button");
       if (radios[idx]) { radios[idx].click(); return; }
       const inputs = document.querySelectorAll("input[type='radio']");
-      if (inputs[idx]) inputs[idx].click();
+      if (inputs[idx]) { inputs[idx].click(); return; }
+      // Fallback: buscar por role o class
+      const allOpts = document.querySelectorAll("[role='radio'], [class*='radio'], [class*='option']");
+      if (allOpts[idx]) allOpts[idx].click();
     }, optionIndex);
 
-    await new Promise((r) => setTimeout(r, 500));
+    await new Promise((r) => setTimeout(r, 1000));
 
+    // Click ENVIAR CÓDIGO (o Continuar/Siguiente)
     await page.evaluate(() => {
       const buttons = document.querySelectorAll("button");
       for (const btn of buttons) {
         const text = btn.innerText.trim().toUpperCase();
-        if ((text.includes("ENVIAR") || text.includes("CONTINUAR") || text.includes("SIGUIENTE") || text.includes("SOLICITAR")) && !btn.disabled) { btn.click(); return; }
+        if ((text.includes("ENVIAR") || text.includes("CONTINUAR") || text.includes("SIGUIENTE") || text.includes("SOLICITAR")) && !btn.disabled) {
+          btn.click(); return;
+        }
       }
+      // Forzar click en submit si está disabled
       const submit = document.querySelector("button[type='submit']");
-      if (submit && !submit.disabled) submit.click();
+      if (submit) {
+        if (submit.disabled) {
+          submit.disabled = false;
+          submit.classList.remove("mat-button-disabled");
+          submit.removeAttribute("disabled");
+        }
+        submit.click();
+      }
     });
 
     await new Promise((r) => setTimeout(r, 3000));
