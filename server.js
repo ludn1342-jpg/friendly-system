@@ -267,36 +267,67 @@ app.post("/api/start", async (req, res) => {
     if (!creditSelector) throw new Error("No se encontró el campo de crédito");
     console.log(`[${sessionId}] Campo: ${creditSelector}`);
 
-    // Llenar crédito (Angular compatible)
-    await page.evaluate((sel, val) => {
+    // Llenar crédito (Angular compatible — click + focus + type)
+    await page.click(creditSelector);
+    await page.evaluate((sel) => {
+      const input = document.querySelector(sel);
+      if (input) { input.value = ""; input.focus(); }
+    }, creditSelector);
+    await page.type(creditSelector, creditNumber, { delay: 50 });
+    // Disparar eventos Angular
+    await page.evaluate((sel) => {
       const input = document.querySelector(sel);
       if (!input) return;
-      const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set;
-      setter.call(input, val);
       input.dispatchEvent(new Event("input", { bubbles: true }));
       input.dispatchEvent(new Event("change", { bubbles: true }));
-      input.dispatchEvent(new Event("blur", { bubbles: true }));
-    }, creditSelector, creditNumber);
+    }, creditSelector);
 
-    console.log(`[${sessionId}] Crédito ingresado`);
-    await new Promise((r) => setTimeout(r, 500));
+    console.log(`[${sessionId}] Crédito ingresado con page.type()`);
+    await new Promise((r) => setTimeout(r, 2000));
 
-    // Click CONTINUAR
+    // Verificar si el formulario es válido ahora
+    const formState = await page.evaluate(() => {
+      const form = document.querySelector("form");
+      const btn = document.querySelector("button[type='submit']");
+      return {
+        formClass: form?.className || "no-form",
+        btnDisabled: btn?.disabled,
+        btnText: btn?.innerText?.trim(),
+        inputValue: document.querySelector("#otp-contract, input[formcontrolname='idProcess'], input[type='text']")?.value
+      };
+    });
+    console.log(`[${sessionId}] Estado formulario:`, JSON.stringify(formState));
+
+    // Click CONTINUAR — si está disabled, forzar habilitación y click
     const clicked = await page.evaluate(() => {
       const buttons = document.querySelectorAll("button");
       for (const btn of buttons) {
         const text = btn.innerText.trim().toUpperCase();
-        if ((text.includes("CONTINUAR") || text.includes("SIGUIENTE") || text.includes("ENVIAR")) && !btn.disabled) {
-          btn.click(); return true;
+        if (text.includes("CONTINUAR") || text.includes("SIGUIENTE") || text.includes("ENVIAR")) {
+          if (btn.disabled) {
+            btn.disabled = false;
+            btn.classList.remove("mat-button-disabled");
+            btn.removeAttribute("disabled");
+          }
+          btn.click();
+          return "clicked";
         }
       }
       const submit = document.querySelector("button[type='submit']");
-      if (submit && !submit.disabled) { submit.click(); return true; }
+      if (submit) {
+        if (submit.disabled) {
+          submit.disabled = false;
+          submit.classList.remove("mat-button-disabled");
+          submit.removeAttribute("disabled");
+        }
+        submit.click();
+        return "clicked-submit";
+      }
       return false;
     });
 
-    if (!clicked) throw new Error("No se encontró el botón CONTINUAR");
-    console.log(`[${sessionId}] CONTINUAR clickeado`);
+    if (!clicked) throw new Error("No se encontró el botón Continuar");
+    console.log(`[${sessionId}] Botón Continuar: ${clicked}`);
     await new Promise((r) => setTimeout(r, 5000));
 
     // Verificar errores
