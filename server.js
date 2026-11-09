@@ -21,16 +21,18 @@ const PROXY = {
   pass: "605d224e-19b6-4baa-8107-296ee7d836f5",
 };
 
-const MOBILIZE_URL = "https://pmz.mfs.bank4us.co/1111111/login";
+// URL REAL del portal de pagos de Mobilize
+const MOBILIZE_URL = "https://www.mobilize-fs.com.co/portal-pagos/";
 
 // ============================================================
-// SESIONES DE PUPPETEER (una por usuario/crédito)
+// POOL DE NAVEGADORES PRE-CALENTADOS
 // ============================================================
+const warmPool = [];
+const POOL_SIZE = 2;
 const sessions = new Map();
 
-async function createSession(sessionId) {
-  console.log(`[${sessionId}] Abriendo navegador con proxy Geonode...`);
-
+async function launchBrowser() {
+  console.log("[POOL] Lanzando navegador...");
   const browser = await puppeteer.launch({
     headless: "new",
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
@@ -45,34 +47,60 @@ async function createSession(sessionId) {
       "--window-size=1366,768",
     ],
   });
+  return browser;
+}
 
+async function warmUp() {
+  try {
+    const browser = await launchBrowser();
+    const page = await browser.newPage();
+
+    await page.authenticate({ username: PROXY.user, password: PROXY.pass });
+    await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    );
+    await page.setViewport({ width: 1366, height: 768 });
+
+    console.log("[POOL] Navegando a Mobilize...");
+    await page.goto(MOBILIZE_URL, { waitUntil: "networkidle2", timeout: 60000 });
+
+    // Esperar input de crédito (Angular Material)
+    await page.waitForSelector("#otp-contract", { timeout: 30000 });
+    console.log("[POOL] Página lista, input #otp-contract encontrado.");
+
+    warmPool.push({ browser, page, createdAt: Date.now() });
+    console.log(`[POOL] Pool: ${warmPool.length}/${POOL_SIZE} listos.`);
+  } catch (err) {
+    console.error("[POOL] Error pre-calentando:", err.message);
+  }
+}
+
+async function fillPool() {
+  while (warmPool.length < POOL_SIZE) {
+    await warmUp();
+  }
+}
+
+async function takeFromPool() {
+  if (warmPool.length > 0) {
+    const warm = warmPool.shift();
+    console.log(`[POOL] Tomado del pool. Quedan: ${warmPool.length}`);
+    // Rellenar en background
+    fillPool().catch(() => {});
+    return warm;
+  }
+  // Pool vacío — crear uno nuevo
+  console.log("[POOL] Pool vacío, creando nuevo...");
+  const browser = await launchBrowser();
   const page = await browser.newPage();
-
-  // Autenticación del proxy
   await page.authenticate({ username: PROXY.user, password: PROXY.pass });
-
-  // User agent real
   await page.setUserAgent(
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
   );
   await page.setViewport({ width: 1366, height: 768 });
-
-  // Navegar al sitio de Mobilize
-  console.log(`[${sessionId}] Navegando a Mobilize...`);
   await page.goto(MOBILIZE_URL, { waitUntil: "networkidle2", timeout: 60000 });
-
-  // Esperar a que cargue la app Angular
-  await new Promise((r) => setTimeout(r, 3000));
-
-  const session = { browser, page, id: sessionId, createdAt: Date.now() };
-  sessions.set(sessionId, session);
-
-  console.log(`[${sessionId}] Sesión lista.`);
-  return session;
-}
-
-function getSession(sessionId) {
-  return sessions.get(sessionId);
+  await page.waitForSelector("#otp-contract", { timeout: 30000 });
+  return { browser, page, createdAt: Date.now() };
 }
 
 async function destroySession(sessionId) {
@@ -92,11 +120,22 @@ setInterval(() => {
   }
 }, 60000);
 
+// Limpiar pool viejo (>10 min sin usar)
+setInterval(() => {
+  const now = Date.now();
+  while (warmPool.length > 0 && now - warmPool[0].createdAt > 10 * 60 * 1000) {
+    const old = warmPool.shift();
+    old.browser.close().catch(() => {});
+    console.log("[POOL] Navegador viejo descartado.");
+  }
+  fillPool().catch(() => {});
+}, 60000);
+
 // ============================================================
 // ENDPOINTS
 // ============================================================
 
-// 1. INICIAR - Abre Mobilize, ingresa crédito, captura estado
+// 1. INICIAR — Toma navegador pre-cargado, llena crédito, screenshot
 app.post("/api/start", async (req, res) => {
   const { creditNumber } = req.body;
   if (!creditNumber) return res.status(400).json({ error: "creditNumber requerido" });
@@ -104,22 +143,19 @@ app.post("/api/start", async (req, res) => {
   const sessionId = "s_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
 
   try {
-    const session = await createSession(sessionId);
-    const page = session.page;
+    const { browser, page } = await takeFromPool();
+    sessions.set(sessionId, { browser, page, id: sessionId, createdAt: Date.now() });
 
-    // Buscar el campo de crédito y llenarlo
+    // Llenar el campo de crédito (selector real: #otp-contract)
     console.log(`[${sessionId}] Llenando crédito: ${creditNumber}`);
+    const input = await page.$("#otp-contract");
+    await input.click({ clickCount: 3 });
+    await input.type(creditNumber, { delay: 40 });
 
-    const creditInput = await page.waitForSelector(
-      'input[formcontrolname="creditNumber"], input[name="creditNumber"], input[type="text"]',
-      { timeout: 15000 }
-    );
-    await creditInput.click({ clickCount: 3 });
-    await creditInput.type(creditNumber, { delay: 50 });
-
+    // Pequeña pausa para que Angular procese
     await new Promise((r) => setTimeout(r, 1500));
 
-    // Captura screenshot
+    // Screenshot
     const screenshot = await page.screenshot({ encoding: "base64", fullPage: false });
 
     const pageInfo = await page.evaluate(() => ({
@@ -143,10 +179,10 @@ app.post("/api/start", async (req, res) => {
   }
 });
 
-// 2. SCREENSHOT - Captura actual
+// 2. SCREENSHOT
 app.post("/api/screenshot", async (req, res) => {
   const { sessionId } = req.body;
-  const session = getSession(sessionId);
+  const session = sessions.get(sessionId);
   if (!session) return res.status(404).json({ error: "Sesión no encontrada" });
 
   try {
@@ -157,10 +193,10 @@ app.post("/api/screenshot", async (req, res) => {
   }
 });
 
-// 3. CLICK - Click en coordenadas (para CAPTCHA, botones, etc.)
+// 3. CLICK en coordenadas (para resolver CAPTCHA)
 app.post("/api/click", async (req, res) => {
   const { sessionId, x, y } = req.body;
-  const session = getSession(sessionId);
+  const session = sessions.get(sessionId);
   if (!session) return res.status(404).json({ error: "Sesión no encontrada" });
 
   try {
@@ -176,13 +212,13 @@ app.post("/api/click", async (req, res) => {
 // 4. CLICK BOTÓN por texto
 app.post("/api/click-button", async (req, res) => {
   const { sessionId, text } = req.body;
-  const session = getSession(sessionId);
+  const session = sessions.get(sessionId);
   if (!session) return res.status(404).json({ error: "Sesión no encontrada" });
 
   try {
     const page = session.page;
     const clicked = await page.evaluate((btnText) => {
-      const btns = [...document.querySelectorAll("button, a, [role='button'], .btn, input[type='submit']")];
+      const btns = [...document.querySelectorAll("button, a, [role='button'], .mat-flat-button")];
       const b = btns.find((el) => el.innerText.toLowerCase().includes(btnText.toLowerCase()));
       if (b) { b.click(); return true; }
       return false;
@@ -196,10 +232,10 @@ app.post("/api/click-button", async (req, res) => {
   }
 });
 
-// 5. ESCRIBIR - Para OTP u otros campos
+// 5. ESCRIBIR en un campo (para OTP)
 app.post("/api/type", async (req, res) => {
   const { sessionId, selector, text } = req.body;
-  const session = getSession(sessionId);
+  const session = sessions.get(sessionId);
   if (!session) return res.status(404).json({ error: "Sesión no encontrada" });
 
   try {
@@ -207,9 +243,9 @@ app.post("/api/type", async (req, res) => {
     if (selector) {
       const el = await page.waitForSelector(selector, { timeout: 10000 });
       await el.click({ clickCount: 3 });
-      await el.type(text, { delay: 50 });
+      await el.type(text, { delay: 40 });
     } else {
-      await page.keyboard.type(text, { delay: 50 });
+      await page.keyboard.type(text, { delay: 40 });
     }
     await new Promise((r) => setTimeout(r, 1000));
     const screenshot = await page.screenshot({ encoding: "base64", fullPage: false });
@@ -222,7 +258,7 @@ app.post("/api/type", async (req, res) => {
 // 6. EXTRAER DATOS de la página
 app.post("/api/extract", async (req, res) => {
   const { sessionId } = req.body;
-  const session = getSession(sessionId);
+  const session = sessions.get(sessionId);
   if (!session) return res.status(404).json({ error: "Sesión no encontrada" });
 
   try {
@@ -246,7 +282,16 @@ app.post("/api/close", async (req, res) => {
 });
 
 // Health
-app.get("/api/health", (req, res) => res.json({ status: "ok", sessions: sessions.size }));
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", sessions: sessions.size, pool: warmPool.length });
+});
 
+// ============================================================
+// ARRANQUE
+// ============================================================
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Mobilize Puppeteer + Geonode → http://localhost:${PORT}`));
+app.listen(PORT, async () => {
+  console.log(`Mobilize Puppeteer + Geonode → http://localhost:${PORT}`);
+  console.log("[POOL] Pre-calentando navegadores...");
+  fillPool().catch((e) => console.error("[POOL] Error inicial:", e.message));
+});
