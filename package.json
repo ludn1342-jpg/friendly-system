@@ -1,7 +1,7 @@
 {
   "name": "mobilize-api-proxy",
-  "version": "5.0.0",
-  "description": "Mobilize Financial Services - Puppeteer + Auto CAPTCHA Solver",
+  "version": "5.1.0",
+  "description": "Mobilize Financial Services - Puppeteer Stealth + Cookie Bypass",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
