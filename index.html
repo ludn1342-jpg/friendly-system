@@ -349,8 +349,8 @@
                     <p class="subtitle">Hemos implementado unas verificaciones rápidas para proteger la información:</p>
                     <ol>
                         <li>Ingresa el <strong>número de crédito</strong>.</li>
-                        <li>Selecciona el medio para recibir tu <strong>código de verificación</strong>.</li>
-                        <li>Ingresa el <strong>código</strong> de un solo uso que recibirás en tu celular o correo electrónico registrado.</li>
+                        <li>Haz la validación a través de <strong>imágenes</strong>.</li>
+                        <li>Ingresa el <strong>código</strong> de un solo uso que recibirás en tu número celular o en tu correo electrónico registrado.</li>
                         <li>Revisa tu crédito y <strong>realiza el pago</strong> de forma segura.</li>
                     </ol>
                     <p class="footer-note">Tus medios de pago, valores y fechas siguen siendo los mismos.</p>
@@ -386,7 +386,7 @@
 
                 <!-- STEP 1: Crédito + CAPTCHA + CONTINUAR -->
                 <div class="step-content active" id="step1">
-                    <p class="step-indicator">Paso 1 de 3 — Ingresa tu número de crédito.</p>
+                    <p class="step-indicator">Paso 1 de 3 — Ingresa tu número de crédito para enviarte un código de verificación.</p>
 
                     <label class="form-label">Número de crédito <span class="req">*</span></label>
                     <input type="text" class="form-input" id="creditInput" placeholder="" inputmode="numeric" autocomplete="off">
@@ -402,7 +402,7 @@
                         <div class="captcha-grid" id="captchaGrid"></div>
                     </div>
 
-                    <button class="btn-primary" onclick="startProcess()">CONTINUAR</button>
+                    <button class="btn-primary" type="submit" onclick="startProcess()">Continuar</button>
                 </div>
 
                 <!-- Loading -->
@@ -418,7 +418,7 @@
                 <div class="step-content" id="step2">
                     <p class="step-indicator">Paso 2 de 3 — Selecciona el medio de verificación.</p>
                     <div class="otp-options" id="otpOptions"></div>
-                    <button class="btn-primary" id="btnStep2" onclick="selectOtp()" disabled>CONTINUAR</button>
+                    <button class="btn-primary" id="btnStep2" onclick="selectOtp()" disabled>Continuar</button>
                 </div>
                 <div class="step-content" id="step2Loading">
                     <div class="spinner-wrap">
@@ -433,7 +433,7 @@
                     <label class="form-label">Código de verificación <span class="req">*</span></label>
                     <input type="text" class="form-input" id="otpInput" placeholder="" inputmode="numeric" maxlength="8" autocomplete="one-time-code">
                     <p class="form-hint">Ingresa el código enviado a tu celular o correo.</p>
-                    <button class="btn-primary" onclick="verifyOtp()">VERIFICAR</button>
+                    <button class="btn-primary" onclick="verifyOtp()">Continuar</button>
                 </div>
                 <div class="step-content" id="step3Loading">
                     <div class="spinner-wrap">
