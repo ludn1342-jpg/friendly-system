@@ -1,0 +1,262 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mobilize - Portal de Pago</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        *{box-sizing:border-box;margin:0;padding:0;font-family:'Poppins',sans-serif}
+        body{background:#f2f3f5;color:#333;min-height:100vh;display:flex;flex-direction:column}
+        .header{background:#fff;padding:20px 40px;box-shadow:0 2px 5px rgba(0,0,0,.05);display:flex;align-items:center;justify-content:space-between}
+        .header img{height:80px;width:auto;object-fit:contain}
+        .header .user-info{font-size:13px;color:#666}
+
+        .container{max-width:900px;margin:30px auto;padding:0 20px;width:100%}
+
+        .credit-card{background:#fff;border-radius:16px;box-shadow:0 4px 15px rgba(0,0,0,.06);overflow:hidden;margin-bottom:25px}
+        .credit-header{background:#242833;color:#fff;padding:25px 30px;display:flex;justify-content:space-between;align-items:center}
+        .credit-header h2{font-size:1rem;font-weight:600}
+        .credit-header .badge{background:#e65c00;padding:4px 14px;border-radius:20px;font-size:11px;font-weight:600}
+        .credit-body{padding:30px}
+
+        .info-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin-bottom:25px}
+        .info-item{padding:15px;background:#f8f9fa;border-radius:10px}
+        .info-item .label{font-size:11px;color:#888;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
+        .info-item .value{font-size:16px;font-weight:600;color:#242833}
+        .info-item .value.highlight{color:#e65c00}
+        .info-item .value.large{font-size:22px}
+
+        .section-title{font-size:14px;font-weight:600;color:#242833;margin-bottom:15px;padding-bottom:8px;border-bottom:2px solid #e65c00;display:inline-block}
+
+        .table-container{overflow-x:auto;margin-bottom:25px}
+        table{width:100%;border-collapse:collapse;font-size:13px}
+        thead{background:#242833;color:#fff}
+        thead th{padding:12px 15px;text-align:left;font-weight:500;font-size:12px}
+        tbody td{padding:12px 15px;border-bottom:1px solid #eee}
+        tbody tr:hover{background:#f8f9fa}
+        .amount{font-weight:600;color:#242833}
+        .status-badge{padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600}
+        .status-pendiente{background:#fff3e0;color:#e65c00}
+        .status-pagado{background:#e8f5e9;color:#2e7d32}
+        .status-vencido{background:#fce4ec;color:#c62828}
+
+        .pay-section{background:#fff;border-radius:16px;box-shadow:0 4px 15px rgba(0,0,0,.06);padding:30px;margin-bottom:25px}
+        .pay-section h3{font-size:15px;font-weight:600;color:#242833;margin-bottom:20px}
+        .pay-row{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid #f0f0f0}
+        .pay-row:last-child{border-bottom:none}
+        .pay-row .pay-label{font-size:13px;color:#666}
+        .pay-row .pay-value{font-size:15px;font-weight:600;color:#242833}
+        .pay-total{background:#f8f9fa;border-radius:10px;padding:15px 20px;margin-top:15px;display:flex;justify-content:space-between;align-items:center}
+        .pay-total .pay-label{font-size:14px;font-weight:600;color:#242833}
+        .pay-total .pay-value{font-size:22px;font-weight:700;color:#e65c00}
+
+        .btn-pay{width:100%;padding:16px;background:#e65c00;color:#fff;border:none;border-radius:25px;font-size:16px;font-weight:600;cursor:pointer;font-family:'Poppins',sans-serif;margin-top:20px;transition:all .3s}
+        .btn-pay:hover{background:#cc5200}
+        .btn-pay:disabled{background:#ccc;cursor:not-allowed}
+
+        .loading{text-align:center;padding:60px 20px}
+        .loading p{font-size:14px;color:#666;margin-top:15px}
+        .big-spinner{width:40px;height:40px;border:4px solid rgba(230,92,0,.2);border-top-color:#e65c00;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto}
+        @keyframes spin{to{transform:rotate(360deg)}}
+
+        .footer{background:#fff;padding:30px 40px;font-size:11px;color:#666;line-height:1.6;margin-top:auto}
+        .footer img{height:70px;margin-top:15px}
+        .footer-legal{font-size:9px;color:#999}
+
+        @media(max-width:768px){
+            .info-grid{grid-template-columns:1fr}
+            .credit-header{flex-direction:column;gap:10px;text-align:center}
+            .header{flex-direction:column;gap:10px;text-align:center}
+        }
+    </style>
+</head>
+<body>
+
+<header class="header">
+    <img src="mobil.png" alt="Mobilize">
+    <div class="user-info" id="userInfo"></div>
+</header>
+
+<div class="container">
+    <!-- Loading -->
+    <div id="loadingSection" class="loading">
+        <div class="big-spinner"></div>
+        <p>Cargando información del crédito...</p>
+    </div>
+
+    <!-- Contenido principal -->
+    <div id="mainContent" style="display:none">
+        <div class="credit-card">
+            <div class="credit-header">
+                <h2>Crédito N° <span id="creditNum"></span></h2>
+                <div class="badge" id="creditStatus">ACTIVO</div>
+            </div>
+            <div class="credit-body">
+                <div class="info-grid">
+                    <div class="info-item">
+                        <div class="label">Titular</div>
+                        <div class="value" id="titular">—</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="label">Documento</div>
+                        <div class="value" id="documento">—</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="label">Vehículo</div>
+                        <div class="value" id="vehiculo">—</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="label">Valor cuota</div>
+                        <div class="value highlight" id="valorCuota">—</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="label">Próximo vencimiento</div>
+                        <div class="value" id="proxVencimiento">—</div>
+                    </div>
+                    <div class="info-item">
+                        <div class="label">Saldo total</div>
+                        <div class="value large highlight" id="saldoTotal">—</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabla de cuotas -->
+        <div class="credit-card" style="padding:25px 30px">
+            <h3 class="section-title">Detalle de cuotas</h3>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Cuota</th>
+                            <th>Fecha vencimiento</th>
+                            <th>Capital</th>
+                            <th>Interés</th>
+                            <th>Seguro</th>
+                            <th>Total</th>
+                            <th>Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cuotasBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Sección de pago -->
+        <div class="pay-section">
+            <h3>Realizar pago</h3>
+            <div class="pay-row">
+                <span class="pay-label">Cuota actual</span>
+                <span class="pay-value" id="payCuota">—</span>
+            </div>
+            <div class="pay-row">
+                <span class="pay-label">Intereses mora</span>
+                <span class="pay-value" id="payMora">$0</span>
+            </div>
+            <div class="pay-row">
+                <span class="pay-label">Seguros</span>
+                <span class="pay-value" id="paySeguros">—</span>
+            </div>
+            <div class="pay-total">
+                <span class="pay-label">Total a pagar</span>
+                <span class="pay-value" id="payTotal">—</span>
+            </div>
+            <button class="btn-pay" id="btnPagar" onclick="generarLinkPago()">PAGAR AHORA</button>
+        </div>
+    </div>
+
+    <!-- Error -->
+    <div id="errorSection" style="display:none;text-align:center;padding:60px 20px">
+        <p style="font-size:48px;margin-bottom:15px">⚠️</p>
+        <h3 style="color:#c62828;margin-bottom:10px">Error al cargar</h3>
+        <p id="errorMsg" style="color:#666;font-size:14px"></p>
+        <button class="btn-pay" style="max-width:300px;margin:20px auto 0" onclick="window.location.href='/'">Volver al inicio</button>
+    </div>
+</div>
+
+<footer class="footer">
+    <p>Todos los pagos serán aplicados según el horario bancario definido por la Entidad.</p>
+    <img src="footer.png" alt="Mobilize">
+    <p class="footer-legal">Los productos y servicios ofrecidos a través de MOBILIZE FINANCIAL SERVICES, son otorgados por RCI Colombia S.A Compañía de Financiamiento, entidad vigilada por la Superintendencia Financiera de Colombia</p>
+</footer>
+
+<script>
+// Leer datos del sessionStorage (vienen del flujo principal)
+const creditData = JSON.parse(sessionStorage.getItem('mobilize_credit') || 'null');
+const sessionId = sessionStorage.getItem('mobilize_session');
+
+if (!creditData) {
+    // Sin datos, mostrar error
+    document.getElementById('loadingSection').style.display = 'none';
+    document.getElementById('errorSection').style.display = 'block';
+    document.getElementById('errorMsg').textContent = 'No se encontraron datos del crédito. Realiza la verificación primero.';
+} else {
+    renderCredit(creditData);
+}
+
+function renderCredit(data) {
+    document.getElementById('loadingSection').style.display = 'none';
+    document.getElementById('mainContent').style.display = 'block';
+
+    // Intentar extraer campos comunes de la respuesta de Mobilize
+    const d = data.data || data.result || data;
+
+    document.getElementById('creditNum').textContent = d.creditNumber || d.numeroCredito || d.credit || '—';
+    document.getElementById('titular').textContent = d.clientName || d.nombreCliente || d.name || '—';
+    document.getElementById('documento').textContent = d.documentNumber || d.documento || d.cedula || '—';
+    document.getElementById('vehiculo').textContent = d.vehicle || d.vehiculo || d.placa || '—';
+    document.getElementById('valorCuota').textContent = formatMoney(d.installmentAmount || d.valorCuota || d.cuota || 0);
+    document.getElementById('proxVencimiento').textContent = d.nextDueDate || d.proximoVencimiento || '—';
+    document.getElementById('saldoTotal').textContent = formatMoney(d.totalBalance || d.saldoTotal || d.balance || 0);
+
+    // Cuotas
+    const cuotas = d.installments || d.cuotas || d.bills || [];
+    const tbody = document.getElementById('cuotasBody');
+    if (cuotas.length > 0) {
+        cuotas.forEach((c, i) => {
+            const status = c.status || c.estado || 'pendiente';
+            const statusClass = status.toLowerCase().includes('pagad') ? 'status-pagado' :
+                                status.toLowerCase().includes('vencid') ? 'status-vencido' : 'status-pendiente';
+            tbody.innerHTML += `<tr>
+                <td>${c.number || c.numero || (i + 1)}</td>
+                <td>${c.dueDate || c.fechaVencimiento || '—'}</td>
+                <td class="amount">${formatMoney(c.capital || 0)}</td>
+                <td>${formatMoney(c.interest || c.interes || 0)}</td>
+                <td>${formatMoney(c.insurance || c.seguro || 0)}</td>
+                <td class="amount">${formatMoney(c.total || c.valor || 0)}</td>
+                <td><span class="status-badge ${statusClass}">${status}</span></td>
+            </tr>`;
+        });
+    } else {
+        tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:#999;padding:30px">Los detalles de cuotas se mostrarán aquí</td></tr>';
+    }
+
+    // Pago
+    document.getElementById('payCuota').textContent = formatMoney(d.installmentAmount || d.valorCuota || 0);
+    document.getElementById('payMora').textContent = formatMoney(d.lateInterest || d.mora || 0);
+    document.getElementById('paySeguros').textContent = formatMoney(d.insurance || d.seguros || 0);
+    const total = (d.totalDue || d.totalPagar || d.installmentAmount || d.valorCuota || 0);
+    document.getElementById('payTotal').textContent = formatMoney(total);
+}
+
+function formatMoney(val) {
+    const n = parseFloat(val) || 0;
+    return '$' + n.toLocaleString('es-CO', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+async function generarLinkPago() {
+    const btn = document.getElementById('btnPagar');
+    btn.disabled = true;
+    btn.innerHTML = '<span style="display:inline-block;width:18px;height:18px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:8px"></span> Generando link de pago...';
+
+    // Aquí iría la llamada al endpoint /api/payment-link si se requiere
+    setTimeout(() => {
+        btn.innerHTML = 'PAGAR AHORA';
+        btn.disabled = false;
+        alert('Funcionalidad de pago próximamente. Contacta a Mobilize para completar el pago.');
+    }, 2000);
+}
+</script>
+</body>
+  </html>
