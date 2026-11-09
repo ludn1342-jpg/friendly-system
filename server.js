@@ -1,3 +1,6 @@
+// Desactivar verificación TLS ANTES de todo (Geonode proxy)
+process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+
 const express = require("express");
 const https = require("https");
 const path = require("path");
@@ -16,9 +19,6 @@ const PROXY_PORT = 9000;
 const geoAgent = new HttpsProxyAgent(
   `http://${PROXY_USER}:${PROXY_PASS}@${PROXY_HOST}:${PROXY_PORT}`
 );
-
-// Permitir certificados de Geonode/Mobilize
-process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 
 const MOBILIZE = "www.mobilize-fs.com.co";
 
@@ -65,6 +65,7 @@ app.use((req, res) => {
       method: req.method,
       headers: fwdHeaders,
       agent: geoAgent,
+      rejectUnauthorized: false,
     },
     (proxyRes) => {
       // Copiar headers de respuesta, quitando los que bloquean iframes
