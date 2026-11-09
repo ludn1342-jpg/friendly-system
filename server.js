@@ -33,12 +33,15 @@ async function createSession(sessionId) {
 
   const browser = await puppeteer.launch({
     headless: "new",
+    executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
     args: [
       `--proxy-server=http://${PROXY.host}:${PROXY.port}`,
       "--no-sandbox",
       "--disable-setuid-sandbox",
       "--disable-dev-shm-usage",
       "--disable-gpu",
+      "--single-process",
+      "--no-zygote",
       "--window-size=1366,768",
     ],
   });
