@@ -285,197 +285,209 @@ app.post("/api/start", async (req, res) => {
     console.log(`[${sessionId}] Crédito ingresado con page.type()`);
     await new Promise((r) => setTimeout(r, 2000));
 
-    // Verificar estado del formulario
+    // Diagnosticar estado completo del formulario y captcha
     const formState = await page.evaluate(() => {
       const form = document.querySelector("form");
       const btn = document.querySelector("button[type='submit']");
+      const captcha = document.querySelector("app-waf-captcha");
+      const captchaHTML = captcha ? captcha.innerHTML.substring(0, 500) : "none";
+      const iframes = document.querySelectorAll("iframe");
+      const iframeInfo = Array.from(iframes).map(f => ({ src: f.src, id: f.id, w: f.width, h: f.height }));
       return {
         formClass: form?.className || "no-form",
         btnDisabled: btn?.disabled,
         btnText: btn?.innerText?.trim(),
         inputValue: document.querySelector("#otp-contract, input[formcontrolname='idProcess'], input[type='text']")?.value,
-        hasCaptcha: !!document.querySelector("app-waf-captcha")
+        hasCaptcha: !!captcha,
+        captchaClass: captcha?.className || "none",
+        captchaHTML,
+        iframes: iframeInfo,
+        hasAwsWaf: !!window.AwsWafIntegration,
+        hasAwsWafCaptcha: !!window.AwsWafCaptcha,
+        awsGlobals: Object.keys(window).filter(k => k.toLowerCase().includes("waf") || k.toLowerCase().includes("captcha"))
       };
     });
     console.log(`[${sessionId}] Estado formulario:`, JSON.stringify(formState));
 
-    // Forzar validación Angular + marcar captcha como resuelto + submit
-    await page.evaluate(() => {
-      // Marcar form como válido
-      const form = document.querySelector("form");
-      if (form) {
-        form.classList.remove("ng-invalid", "ng-pristine", "ng-untouched");
-        form.classList.add("ng-valid", "ng-dirty", "ng-touched");
-      }
-      // Marcar captcha como válido
-      const captcha = document.querySelector("app-waf-captcha");
-      if (captcha) {
-        captcha.classList.add("ng-valid");
-        captcha.classList.remove("ng-invalid");
-      }
-      // Marcar todos los formcontrols como válidos
-      document.querySelectorAll("[formcontrolname]").forEach(el => {
-        el.classList.remove("ng-invalid");
-        el.classList.add("ng-valid", "ng-dirty", "ng-touched");
-      });
-      // Habilitar botón
-      const btn = document.querySelector("button[type='submit']");
-      if (btn) {
-        btn.disabled = false;
-        btn.classList.remove("mat-button-disabled");
-        btn.removeAttribute("disabled");
-      }
-    });
-    await new Promise((r) => setTimeout(r, 500));
+    // ═══ ESTRATEGIA: Resolver el WAF CAPTCHA desde dentro de la página ═══
+    // Los cookies WAF ya están inyectados. El componente app-waf-captcha
+    // probablemente usa AwsWafIntegration.getToken() para validar.
+    // Si llamamos getToken() con cookies válidos, debería retornar un token
+    // y podemos disparar el callback de éxito del componente.
 
-    // Intentar acceder al FormGroup de Angular y marcarlo válido internamente
-    await page.evaluate(() => {
+    // Paso 1: Intentar resolver WAF captcha via AwsWafIntegration
+    const wafResult = await page.evaluate(async () => {
+      const results = { methods: [] };
+
+      // Método A: AwsWafIntegration.getToken()
       try {
-        // Método 1: window.ng (modo dev)
-        const formEl = document.querySelector("form");
-        if (formEl && window.ng) {
-          const comp = window.ng.getComponent(formEl) || window.ng.getComponent(formEl.closest("[_nghost-tdj-c54]") || formEl.parentElement);
-          if (comp && comp.form) {
-            Object.keys(comp.form.controls).forEach(key => {
-              comp.form.controls[key].setErrors(null);
-              comp.form.controls[key].markAsTouched();
-            });
-            comp.form.updateValueAndValidity();
-            console.log("ng-hack: window.ng method worked");
+        if (window.AwsWafIntegration) {
+          const token = await window.AwsWafIntegration.getToken();
+          results.methods.push("AwsWafIntegration.getToken: " + (token ? "GOT TOKEN" : "no token"));
+          if (token) results.wafToken = token.substring(0, 30) + "...";
+        } else {
+          results.methods.push("AwsWafIntegration: not found");
+        }
+      } catch(e) { results.methods.push("AwsWafIntegration error: " + e.message); }
+
+      // Método B: AwsWafCaptcha.renderCaptcha auto-solve
+      try {
+        if (window.AwsWafCaptcha) {
+          results.methods.push("AwsWafCaptcha: found");
+        }
+      } catch(e) { results.methods.push("AwsWafCaptcha error: " + e.message); }
+
+      // Método C: Buscar iframe de WAF captcha y trigger success
+      try {
+        const iframes = document.querySelectorAll("iframe");
+        for (const iframe of iframes) {
+          if (iframe.src && (iframe.src.includes("captcha") || iframe.src.includes("waf"))) {
+            results.methods.push("WAF iframe found: " + iframe.src.substring(0, 80));
           }
         }
-      } catch(e) { console.log("ng-hack window.ng error:", e.message); }
+      } catch(e) {}
 
+      // Método D: Buscar event listeners o callbacks en el componente captcha
       try {
-        // Método 2: __ngContext__ para acceder internamente
-        const formEl = document.querySelector("form");
-        if (formEl) {
-          // Buscar componentes padre que tengan el formGroup
-          let el = formEl;
-          while (el) {
+        const captchaEl = document.querySelector("app-waf-captcha");
+        if (captchaEl) {
+          // Buscar en __ngContext__ el componente y su callback
+          const allEls = [captchaEl, ...captchaEl.querySelectorAll("*")];
+          for (const el of allEls) {
             if (el.__ngContext__) {
-              const ctx = el.__ngContext__;
-              // Buscar en el contexto algo que parezca un FormGroup
+              const ctx = Array.isArray(el.__ngContext__) ? el.__ngContext__ : [];
               for (let i = 0; i < ctx.length; i++) {
                 const item = ctx[i];
-                if (item && item.controls && typeof item.updateValueAndValidity === "function") {
-                  Object.keys(item.controls).forEach(key => {
-                    item.controls[key].setErrors(null);
-                    item.controls[key].markAsTouched();
-                    if (key.toLowerCase().includes("captcha") || key.toLowerCase().includes("waf")) {
-                      item.controls[key].setValue(true);
+                if (item && typeof item === "object" && item !== null) {
+                  const keys = Object.keys(item);
+                  if (keys.length > 0 && keys.length < 20) {
+                    results.methods.push(`ngContext[${i}] keys: ${keys.join(",")}`);
+                  }
+                  // Si tiene un método onSuccess o onCaptchaSuccess, llamarlo
+                  for (const key of keys) {
+                    if (key.toLowerCase().includes("success") || key.toLowerCase().includes("valid") || key.toLowerCase().includes("resolved")) {
+                      results.methods.push(`Found callback: ${key} on ctx[${i}]`);
+                      if (typeof item[key] === "function") {
+                        try { item[key](true); results.methods.push(`Called ${key}(true)`); } catch(e) {}
+                      } else {
+                        try { item[key] = true; results.methods.push(`Set ${key} = true`); } catch(e) {}
+                      }
+                    }
+                  }
+                  // Si es un FormControl con setValue
+                  if (typeof item.setValue === "function" && typeof item.setErrors === "function") {
+                    item.setValue(true);
+                    item.setErrors(null);
+                    results.methods.push(`FormControl found at ctx[${i}], setValue(true)+setErrors(null)`);
+                  }
+                }
+              }
+            }
+          }
+        }
+      } catch(e) { results.methods.push("ngContext scan error: " + e.message); }
+
+      return results;
+    });
+    console.log(`[${sessionId}] WAF resolve:`, JSON.stringify(wafResult));
+
+    // Paso 2: Esperar a que el captcha se auto-resuelva (los cookies son válidos)
+    await new Promise((r) => setTimeout(r, 5000));
+
+    // Paso 3: Verificar si el form ahora es válido
+    const formState2 = await page.evaluate(() => {
+      const form = document.querySelector("form");
+      const btn = document.querySelector("button[type='submit']");
+      return {
+        formClass: form?.className || "no-form",
+        btnDisabled: btn?.disabled,
+        captchaClass: document.querySelector("app-waf-captcha")?.className || "removed"
+      };
+    });
+    console.log(`[${sessionId}] Form después de WAF:`, JSON.stringify(formState2));
+
+    // Paso 4: Si el form sigue invalid, hacer el hack nuclear de Angular
+    if (formState2.formClass.includes("ng-invalid")) {
+      console.log(`[${sessionId}] Form sigue invalid — hack nuclear Angular`);
+      await page.evaluate(() => {
+        // Buscar TODOS los elementos con __ngContext__ y limpiar FormControls
+        const walk = (el) => {
+          if (el.__ngContext__) {
+            const ctx = Array.isArray(el.__ngContext__) ? el.__ngContext__ : [];
+            for (const item of ctx) {
+              if (item && typeof item === "object") {
+                // FormGroup
+                if (item.controls && typeof item.updateValueAndValidity === "function") {
+                  Object.keys(item.controls).forEach(k => {
+                    item.controls[k].setErrors(null);
+                    item.controls[k].markAsTouched();
+                    item.controls[k].markAsDirty();
+                    if (typeof item.controls[k].setValue === "function" && item.controls[k].value == null) {
+                      item.controls[k].setValue(true);
                     }
                   });
                   item.updateValueAndValidity();
-                  console.log("ng-hack: __ngContext__ method worked, controls:", Object.keys(item.controls));
-                  break;
+                  console.log("NUCLEAR: FormGroup limpiado, keys:", Object.keys(item.controls));
+                }
+                // FormControl suelto
+                if (typeof item.setValue === "function" && typeof item.setErrors === "function" && !item.controls) {
+                  item.setErrors(null);
+                  item.markAsTouched && item.markAsTouched();
                 }
               }
-              break;
             }
-            el = el.parentElement;
           }
-        }
-      } catch(e) { console.log("ng-hack __ngContext__ error:", e.message); }
+          for (const child of el.children) walk(child);
+        };
+        walk(document.body);
+      });
+      await new Promise((r) => setTimeout(r, 1000));
+    }
 
-      try {
-        // Método 3: Eliminar el componente captcha del DOM completamente
-        const captcha = document.querySelector("app-waf-captcha");
-        if (captcha) {
-          captcha.remove();
-          console.log("ng-hack: removed app-waf-captcha from DOM");
-        }
-      } catch(e) { console.log("ng-hack remove error:", e.message); }
-    });
-    await new Promise((r) => setTimeout(r, 500));
-
-    // Click botón + submit del form
+    // Paso 5: Click botón
     const clicked = await page.evaluate(() => {
+      const form = document.querySelector("form");
       const btn = document.querySelector("button[type='submit']");
+      const state = {
+        formValid: form?.classList.contains("ng-valid"),
+        btnDisabled: btn?.disabled
+      };
+
+      // Forzar habilitación
       if (btn) {
         btn.disabled = false;
         btn.removeAttribute("disabled");
         btn.classList.remove("mat-button-disabled");
         btn.click();
       }
-      // También submit directo del form
-      const form = document.querySelector("form");
+
+      // Submit del form
       if (form) {
+        try { form.requestSubmit(); } catch(e) {}
         form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: true }));
         form.dispatchEvent(new Event("ngSubmit", { bubbles: true }));
-        try { form.requestSubmit(); } catch(e) {}
       }
-      return btn ? "clicked+submitted" : false;
+
+      return btn ? "clicked:" + JSON.stringify(state) : false;
     });
 
     if (!clicked) throw new Error("No se encontró el botón Continuar");
     console.log(`[${sessionId}] Botón Continuar: ${clicked}`);
 
     // Esperar para que Angular procese y navegue al paso 2
-    await new Promise((r) => setTimeout(r, 6000));
+    await new Promise((r) => setTimeout(r, 8000));
 
     // Verificar si la página cambió
     let postSubmit = await page.evaluate(() => {
       return {
         radioCount: document.querySelectorAll("mat-radio-button").length,
-        bodySnippet: document.body.innerText.substring(0, 300),
-        url: window.location.href
+        hasRadioInputs: document.querySelectorAll("input[type='radio']").length,
+        bodySnippet: document.body.innerText.substring(0, 500),
+        url: window.location.href,
+        formClass: document.querySelector("form")?.className || "no-form"
       };
     });
-    console.log(`[${sessionId}] Post-submit intento 1:`, JSON.stringify(postSubmit));
-
-    // Si no hay radios, intentar segundo enfoque: trigger ngSubmit via Angular Router
-    if (postSubmit.radioCount === 0) {
-      console.log(`[${sessionId}] No hay radios, intentando segundo enfoque...`);
-      await page.evaluate(() => {
-        try {
-          // Re-intentar: eliminar captcha, forzar form valid, submit
-          const captcha = document.querySelector("app-waf-captcha");
-          if (captcha) captcha.remove();
-
-          const form = document.querySelector("form");
-          if (form) {
-            // Quitar todas las validaciones ng-invalid recursivamente
-            form.querySelectorAll(".ng-invalid").forEach(el => {
-              el.classList.remove("ng-invalid");
-              el.classList.add("ng-valid");
-            });
-            form.classList.remove("ng-invalid");
-            form.classList.add("ng-valid", "ng-submitted");
-          }
-
-          // Habilitar y click botón
-          const btn = document.querySelector("button[type='submit']");
-          if (btn) {
-            btn.disabled = false;
-            btn.removeAttribute("disabled");
-            btn.classList.remove("mat-button-disabled");
-          }
-
-          // Simular eventos como lo haría un usuario real
-          if (btn) {
-            btn.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
-            btn.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
-            btn.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-          }
-          if (form) {
-            form.dispatchEvent(new Event("submit", { bubbles: true, cancelable: false }));
-            form.dispatchEvent(new Event("ngSubmit", { bubbles: true }));
-          }
-        } catch(e) { console.log("retry-submit error:", e.message); }
-      });
-
-      await new Promise((r) => setTimeout(r, 8000));
-
-      postSubmit = await page.evaluate(() => {
-        return {
-          radioCount: document.querySelectorAll("mat-radio-button").length,
-          bodySnippet: document.body.innerText.substring(0, 300),
-          url: window.location.href
-        };
-      });
-      console.log(`[${sessionId}] Post-submit intento 2:`, JSON.stringify(postSubmit));
-    }
+    console.log(`[${sessionId}] Post-submit:`, JSON.stringify(postSubmit));
 
     // Verificar errores
     const pageError = await page.evaluate(() => {
