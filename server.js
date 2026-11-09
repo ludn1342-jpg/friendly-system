@@ -1,6 +1,8 @@
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
+const http = require("http");
+const WebSocket = require("ws");
 const puppeteer = require("puppeteer-extra");
 const StealthPlugin = require("puppeteer-extra-plugin-stealth");
 
@@ -21,11 +23,10 @@ const PROXY = {
   pass: "605d224e-19b6-4baa-8107-296ee7d836f5",
 };
 
-// URL REAL del portal de pagos de Mobilize
 const MOBILIZE_URL = "https://www.mobilize-fs.com.co/portal-pagos/";
 
 // ============================================================
-// POOL DE NAVEGADORES PRE-CALENTADOS
+// POOL
 // ============================================================
 const warmPool = [];
 const POOL_SIZE = 2;
@@ -33,7 +34,7 @@ const sessions = new Map();
 
 async function launchBrowser() {
   console.log("[POOL] Lanzando navegador...");
-  const browser = await puppeteer.launch({
+  return puppeteer.launch({
     headless: "new",
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
     args: [
@@ -42,31 +43,29 @@ async function launchBrowser() {
       "--disable-setuid-sandbox",
       "--disable-dev-shm-usage",
       "--disable-gpu",
-      "--single-process",
-      "--no-zygote",
       "--window-size=1366,768",
     ],
   });
-  return browser;
+}
+
+async function preparePage(page) {
+  await page.authenticate({ username: PROXY.user, password: PROXY.pass });
+  await page.setUserAgent(
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+  );
+  await page.setViewport({ width: 1366, height: 768 });
 }
 
 async function warmUp() {
   try {
     const browser = await launchBrowser();
     const page = await browser.newPage();
-
-    await page.authenticate({ username: PROXY.user, password: PROXY.pass });
-    await page.setUserAgent(
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    );
-    await page.setViewport({ width: 1366, height: 768 });
+    await preparePage(page);
 
     console.log("[POOL] Navegando a Mobilize...");
     await page.goto(MOBILIZE_URL, { waitUntil: "networkidle2", timeout: 60000 });
-
-    // Esperar input de crédito (Angular Material)
     await page.waitForSelector("#otp-contract", { timeout: 30000 });
-    console.log("[POOL] Página lista, input #otp-contract encontrado.");
+    console.log("[POOL] Página lista.");
 
     warmPool.push({ browser, page, createdAt: Date.now() });
     console.log(`[POOL] Pool: ${warmPool.length}/${POOL_SIZE} listos.`);
@@ -85,19 +84,13 @@ async function takeFromPool() {
   if (warmPool.length > 0) {
     const warm = warmPool.shift();
     console.log(`[POOL] Tomado del pool. Quedan: ${warmPool.length}`);
-    // Rellenar en background
     fillPool().catch(() => {});
     return warm;
   }
-  // Pool vacío — crear uno nuevo
   console.log("[POOL] Pool vacío, creando nuevo...");
   const browser = await launchBrowser();
   const page = await browser.newPage();
-  await page.authenticate({ username: PROXY.user, password: PROXY.pass });
-  await page.setUserAgent(
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-  );
-  await page.setViewport({ width: 1366, height: 768 });
+  await preparePage(page);
   await page.goto(MOBILIZE_URL, { waitUntil: "networkidle2", timeout: 60000 });
   await page.waitForSelector("#otp-contract", { timeout: 30000 });
   return { browser, page, createdAt: Date.now() };
@@ -112,15 +105,13 @@ async function destroySession(sessionId) {
   }
 }
 
-// Limpiar sesiones viejas (>15 min)
 setInterval(() => {
   const now = Date.now();
   for (const [id, s] of sessions) {
-    if (now - s.createdAt > 15 * 60 * 1000) destroySession(id);
+    if (now - s.createdAt > 20 * 60 * 1000) destroySession(id);
   }
 }, 60000);
 
-// Limpiar pool viejo (>10 min sin usar)
 setInterval(() => {
   const now = Date.now();
   while (warmPool.length > 0 && now - warmPool[0].createdAt > 10 * 60 * 1000) {
@@ -132,7 +123,7 @@ setInterval(() => {
 }, 60000);
 
 // ============================================================
-// ENDPOINTS
+// ENDPOINTS (los tuyos intactos)
 // ============================================================
 
 // 1. INICIAR — Llena crédito, clic Continuar, extrae opciones OTP
@@ -146,14 +137,12 @@ app.post("/api/start", async (req, res) => {
     const { browser, page } = await takeFromPool();
     sessions.set(sessionId, { browser, page, id: sessionId, createdAt: Date.now() });
 
-    // Llenar el campo de crédito
     console.log(`[${sessionId}] Llenando crédito: ${creditNumber}`);
     const input = await page.$("#otp-contract");
     await input.click({ clickCount: 3 });
     await input.type(creditNumber, { delay: 40 });
     await new Promise((r) => setTimeout(r, 800));
 
-    // Clic en CONTINUAR automáticamente
     console.log(`[${sessionId}] Clic en Continuar...`);
     await page.evaluate(() => {
       const btns = [...document.querySelectorAll("button[type='submit'], button.otp-form__primary, .mat-flat-button")];
@@ -161,21 +150,16 @@ app.post("/api/start", async (req, res) => {
       if (b) b.click();
     });
 
-    // Esperar a que cargue la siguiente vista (opciones OTP)
     await new Promise((r) => setTimeout(r, 4000));
 
-    // Extraer opciones de envío OTP (radio buttons, botones, cards, etc.)
     const otpOptions = await page.evaluate(() => {
       const options = [];
-      // Buscar radio buttons, mat-radio, cards clickeables, botones de opción
       const radios = document.querySelectorAll("mat-radio-button, input[type='radio'], .mat-radio-button");
       radios.forEach((r, i) => {
         const label = r.innerText || r.getAttribute("aria-label") || r.closest("label")?.innerText || "";
         const value = r.querySelector("input")?.value || r.getAttribute("value") || i.toString();
         if (label.trim()) options.push({ type: "radio", index: i, label: label.trim(), value });
       });
-
-      // Buscar botones/cards que digan SMS, correo, email, celular, etc.
       if (options.length === 0) {
         const allClickable = document.querySelectorAll("button, .mat-card, [role='button'], mat-card, .otp-option, .channel-option, a.mat-list-item, mat-list-option, .mat-selection-list mat-list-option");
         allClickable.forEach((el, i) => {
@@ -187,26 +171,37 @@ app.post("/api/start", async (req, res) => {
           }
         });
       }
-
-      // Capturar también el texto visible de la página para contexto
       const bodyText = document.body.innerText.substring(0, 2000);
-
       return { options, bodyText, url: window.location.href };
     });
 
-    // Si hay CAPTCHA visible, tomar screenshot
+    // Detección de CAPTCHA dinámico (múltiples selectores)
     const hasCaptcha = await page.evaluate(() => {
-      const cap = document.querySelector(".waf-captcha__stage, #captcha-container, [class*='captcha']");
-      return cap && cap.offsetHeight > 0;
+      const sels = [
+        ".waf-captcha__stage",
+        "#captcha-container",
+        "iframe[src*='recaptcha' i]",
+        "iframe[src*='hcaptcha' i]",
+        "iframe[title*='reCAPTCHA' i]",
+        "div.g-recaptcha",
+        "div.h-captcha",
+        "[class*='captcha' i]",
+        "canvas[class*='captcha' i]",
+      ];
+      for (const s of sels) {
+        const el = document.querySelector(s);
+        if (el && el.offsetHeight > 0 && el.offsetWidth > 0) return true;
+      }
+      return false;
     });
 
     let screenshot = null;
     if (hasCaptcha) {
-      screenshot = await page.screenshot({ encoding: "base64", fullPage: false });
-      screenshot = `data:image/png;base64,${screenshot}`;
+      const buf = await page.screenshot({ encoding: "base64", fullPage: false });
+      screenshot = `data:image/png;base64,${buf}`;
     }
 
-    console.log(`[${sessionId}] Opciones OTP encontradas: ${otpOptions.options.length}, CAPTCHA: ${hasCaptcha}`);
+    console.log(`[${sessionId}] OTP: ${otpOptions.options.length}, CAPTCHA: ${hasCaptcha}`);
 
     res.json({
       sessionId,
@@ -216,7 +211,6 @@ app.post("/api/start", async (req, res) => {
       hasCaptcha,
       screenshot,
     });
-
   } catch (err) {
     console.error(`[${sessionId}] Error start:`, err.message);
     await destroySession(sessionId);
@@ -224,7 +218,7 @@ app.post("/api/start", async (req, res) => {
   }
 });
 
-// 1b. SELECCIONAR MÉTODO OTP — El usuario escogió SMS o correo
+// 1b. SELECCIONAR MÉTODO OTP
 app.post("/api/select-otp", async (req, res) => {
   const { sessionId, optionIndex, optionType, optionValue } = req.body;
   const session = sessions.get(sessionId);
@@ -232,8 +226,6 @@ app.post("/api/select-otp", async (req, res) => {
 
   try {
     const page = session.page;
-
-    // Hacer clic en la opción que el usuario escogió
     console.log(`[${sessionId}] Seleccionando OTP: ${optionType} index=${optionIndex} val=${optionValue}`);
 
     if (optionType === "radio") {
@@ -242,7 +234,6 @@ app.post("/api/select-otp", async (req, res) => {
         if (radios[idx]) radios[idx].click();
       }, optionIndex);
     } else {
-      // Click en botón/card por texto
       await page.evaluate((val) => {
         const allClickable = document.querySelectorAll("button, .mat-card, [role='button'], mat-card, .otp-option, .channel-option, a.mat-list-item, mat-list-option, .mat-selection-list mat-list-option");
         const match = [...allClickable].find((el) => el.innerText.trim() === val);
@@ -252,7 +243,6 @@ app.post("/api/select-otp", async (req, res) => {
 
     await new Promise((r) => setTimeout(r, 1500));
 
-    // Buscar y hacer clic en botón de enviar/continuar si existe
     await page.evaluate(() => {
       const btns = [...document.querySelectorAll("button[type='submit'], button.mat-flat-button, .mat-flat-button")];
       const b = btns.find((el) => {
@@ -264,35 +254,32 @@ app.post("/api/select-otp", async (req, res) => {
 
     await new Promise((r) => setTimeout(r, 3000));
 
-    // Verificar si hay CAPTCHA ahora
     const hasCaptcha = await page.evaluate(() => {
-      const cap = document.querySelector(".waf-captcha__stage, #captcha-container, [class*='captcha']");
-      return cap && cap.offsetHeight > 0;
+      const sels = [".waf-captcha__stage", "#captcha-container", "iframe[src*='recaptcha' i]",
+        "iframe[src*='hcaptcha' i]", "div.g-recaptcha", "div.h-captcha", "[class*='captcha' i]"];
+      for (const s of sels) {
+        const el = document.querySelector(s);
+        if (el && el.offsetHeight > 0 && el.offsetWidth > 0) return true;
+      }
+      return false;
     });
 
     let screenshot = null;
     if (hasCaptcha) {
-      screenshot = await page.screenshot({ encoding: "base64", fullPage: false });
-      screenshot = `data:image/png;base64,${screenshot}`;
+      const buf = await page.screenshot({ encoding: "base64", fullPage: false });
+      screenshot = `data:image/png;base64,${buf}`;
     }
 
     const bodyText = await page.evaluate(() => document.body.innerText.substring(0, 2000));
-
     console.log(`[${sessionId}] OTP seleccionado. CAPTCHA: ${hasCaptcha}`);
 
-    res.json({
-      success: true,
-      hasCaptcha,
-      screenshot,
-      bodyText,
-    });
-
+    res.json({ success: true, hasCaptcha, screenshot, bodyText });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// 1c. DETECTAR ESTADO — ¿Hay opciones OTP o CAPTCHA?
+// 1c. DETECTAR ESTADO
 app.post("/api/detect-state", async (req, res) => {
   const { sessionId } = req.body;
   const session = sessions.get(sessionId);
@@ -300,7 +287,6 @@ app.post("/api/detect-state", async (req, res) => {
 
   try {
     const page = session.page;
-
     const otpOptions = await page.evaluate(() => {
       const options = [];
       const radios = document.querySelectorAll("mat-radio-button, input[type='radio'], .mat-radio-button");
@@ -323,18 +309,22 @@ app.post("/api/detect-state", async (req, res) => {
     });
 
     const hasCaptcha = await page.evaluate(() => {
-      const cap = document.querySelector(".waf-captcha__stage, #captcha-container, [class*='captcha']");
-      return cap && cap.offsetHeight > 0;
+      const sels = [".waf-captcha__stage", "#captcha-container", "iframe[src*='recaptcha' i]",
+        "iframe[src*='hcaptcha' i]", "div.g-recaptcha", "div.h-captcha", "[class*='captcha' i]"];
+      for (const s of sels) {
+        const el = document.querySelector(s);
+        if (el && el.offsetHeight > 0 && el.offsetWidth > 0) return true;
+      }
+      return false;
     });
 
     let screenshot = null;
     if (hasCaptcha) {
-      screenshot = await page.screenshot({ encoding: "base64", fullPage: false });
-      screenshot = `data:image/png;base64,${screenshot}`;
+      const buf = await page.screenshot({ encoding: "base64", fullPage: false });
+      screenshot = `data:image/png;base64,${buf}`;
     }
 
     const bodyText = await page.evaluate(() => document.body.innerText.substring(0, 2000));
-
     res.json({ otpOptions, hasCaptcha, screenshot, bodyText });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -355,7 +345,7 @@ app.post("/api/screenshot", async (req, res) => {
   }
 });
 
-// 3. CLICK en coordenadas (para resolver CAPTCHA)
+// 3. CLICK en coordenadas (fallback — usado solo si el espejo falla)
 app.post("/api/click", async (req, res) => {
   const { sessionId, x, y } = req.body;
   const session = sessions.get(sessionId);
@@ -417,7 +407,7 @@ app.post("/api/type", async (req, res) => {
   }
 });
 
-// 6. EXTRAER DATOS de la página
+// 6. EXTRAER DATOS
 app.post("/api/extract", async (req, res) => {
   const { sessionId } = req.body;
   const session = sessions.get(sessionId);
@@ -449,10 +439,108 @@ app.get("/api/health", (req, res) => {
 });
 
 // ============================================================
+// HTTP + WEBSOCKET ESPEJO EN VIVO
+// ============================================================
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ noServer: true, perMessageDeflate: false });
+
+server.on("upgrade", (req, socket, head) => {
+  if (!req.url.startsWith("/ws/mirror")) return;
+  wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
+});
+
+wss.on("connection", async (ws, req) => {
+  const url = new URL(req.url, "http://x");
+  const sessionId = url.searchParams.get("sessionId");
+  const session = sessions.get(sessionId);
+
+  if (!session) {
+    ws.send(JSON.stringify({ type: "error", message: "Sesión no encontrada" }));
+    return ws.close(4004, "no session");
+  }
+
+  const { page } = session;
+  console.log(`[${sessionId}] Espejo conectado.`);
+
+  let cdp;
+  try {
+    cdp = await page.target().createCDPSession();
+    await cdp.send("Page.enable");
+    await cdp.send("Page.startScreencast", {
+      format: "jpeg",
+      quality: 65,
+      maxWidth: 1100,
+      maxHeight: 800,
+      everyNthFrame: 2,
+    });
+
+    cdp.on("Page.screencastFrame", async (frame) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(Buffer.from(frame.data, "base64"), { binary: true });
+      }
+      try { await cdp.send("Page.screencastFrameAck", { sessionId: frame.sessionId }); } catch {}
+    });
+  } catch (e) {
+    console.error(`[${sessionId}] Error CDP:`, e.message);
+    ws.close();
+    return;
+  }
+
+  ws.on("message", async (raw) => {
+    let msg;
+    try { msg = JSON.parse(raw); } catch { return; }
+    try {
+      switch (msg.t) {
+        case "move":
+          await page.mouse.move(msg.x, msg.y);
+          break;
+        case "click":
+          await page.mouse.move(msg.x, msg.y);
+          await page.mouse.down();
+          await new Promise((r) => setTimeout(r, 50));
+          await page.mouse.up();
+          break;
+        case "dblclick":
+          await page.mouse.move(msg.x, msg.y);
+          await page.mouse.down({ clickCount: 1 });
+          await page.mouse.up({ clickCount: 1 });
+          await new Promise((r) => setTimeout(r, 30));
+          await page.mouse.down({ clickCount: 2 });
+          await page.mouse.up({ clickCount: 2 });
+          break;
+        case "wheel":
+          await page.mouse.wheel({ deltaY: msg.d });
+          break;
+        case "press":
+          await page.keyboard.press(msg.k);
+          break;
+        case "type":
+          await page.keyboard.type(msg.s, { delay: 20 });
+          break;
+        case "backspace":
+          await page.keyboard.press("Backspace");
+          break;
+        case "selectall":
+          await page.keyboard.down("Control");
+          await page.keyboard.press("KeyA");
+          await page.keyboard.up("Control");
+          break;
+      }
+    } catch (e) { /* silencioso */ }
+  });
+
+  ws.on("close", async () => {
+    try { await cdp.send("Page.stopScreencast"); } catch {}
+    try { await cdp.detach(); } catch {}
+    console.log(`[${sessionId}] Espejo desconectado.`);
+  });
+});
+
+// ============================================================
 // ARRANQUE
 // ============================================================
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, async () => {
+server.listen(PORT, async () => {
   console.log(`Mobilize Puppeteer + Geonode → http://localhost:${PORT}`);
   console.log("[POOL] Pre-calentando navegadores...");
   fillPool().catch((e) => console.error("[POOL] Error inicial:", e.message));
