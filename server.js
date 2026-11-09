@@ -240,6 +240,41 @@ app.post("/api/start", async (req, res) => {
 
     sessions.set(sessionId, { browser, page, creditNumber, createdAt: Date.now() });
 
+    // ═══ INTERCEPTAR AwsWafCaptcha ANTES de navegar ═══
+    // Esto captura el callback onSuccess que Angular registra cuando renderiza el captcha
+    await page.evaluateOnNewDocument(() => {
+      window.__wafCaptchaIntercepted = false;
+      window.__wafOnSuccess = null;
+      window.__wafOnError = null;
+
+      // Interceptar cuando AwsWafCaptcha se carga
+      let _awsWafCaptcha = undefined;
+      Object.defineProperty(window, "AwsWafCaptcha", {
+        configurable: true,
+        enumerable: true,
+        get() { return _awsWafCaptcha; },
+        set(val) {
+          _awsWafCaptcha = val;
+          if (val && typeof val.renderCaptcha === "function") {
+            const originalRender = val.renderCaptcha.bind(val);
+            val.renderCaptcha = function(container, config) {
+              console.log("[INTERCEPT] renderCaptcha called, config keys:", Object.keys(config || {}));
+              // Guardar callbacks
+              if (config) {
+                if (config.onSuccess) window.__wafOnSuccess = config.onSuccess;
+                if (config.onError) window.__wafOnError = config.onError;
+                window.__wafCaptchaIntercepted = true;
+                window.__wafCaptchaConfig = config;
+              }
+              // Ejecutar el original para que Angular no detecte error
+              return originalRender(container, config);
+            };
+          }
+        }
+      });
+    });
+    console.log(`[${sessionId}] Interceptor WAF instalado`);
+
     // Navegar con bypass de cookies
     const passed = await navigateWithCookies(page);
     if (!passed) {
