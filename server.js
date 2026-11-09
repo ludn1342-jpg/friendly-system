@@ -23,7 +23,6 @@ const PROXY = {
   pass: "605d224e-19b6-4baa-8107-296ee7d836f5",
 };
 
-// URL REAL del portal de pagos de Mobilize
 const MOBILIZE_URL = "https://www.mobilize-fs.com.co/portal-pagos/";
 
 // ============================================================
@@ -35,7 +34,7 @@ const sessions = new Map();
 
 async function launchBrowser() {
   console.log("[POOL] Lanzando navegador...");
-  const browser = await puppeteer.launch({
+  return await puppeteer.launch({
     headless: "new",
     executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || undefined,
     args: [
@@ -49,50 +48,40 @@ async function launchBrowser() {
       "--window-size=1366,768",
     ],
   });
-  return browser;
 }
 
 async function warmUp() {
   try {
     const browser = await launchBrowser();
     const page = await browser.newPage();
-
     await page.authenticate({ username: PROXY.user, password: PROXY.pass });
     await page.setUserAgent(
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     );
     await page.setViewport({ width: 1366, height: 768 });
-
     console.log("[POOL] Navegando a Mobilize...");
     await page.goto(MOBILIZE_URL, { waitUntil: "networkidle2", timeout: 60000 });
-
-    // Esperar input de crédito (Angular Material)
     await page.waitForSelector("#otp-contract", { timeout: 30000 });
-    console.log("[POOL] Página lista, input #otp-contract encontrado.");
-
+    console.log("[POOL] Página lista.");
     warmPool.push({ browser, page, createdAt: Date.now() });
-    console.log(`[POOL] Pool: ${warmPool.length}/${POOL_SIZE} listos.`);
+    console.log(`[POOL] Pool: ${warmPool.length}/${POOL_SIZE}`);
   } catch (err) {
     console.error("[POOL] Error pre-calentando:", err.message);
   }
 }
 
 async function fillPool() {
-  while (warmPool.length < POOL_SIZE) {
-    await warmUp();
-  }
+  while (warmPool.length < POOL_SIZE) await warmUp();
 }
 
 async function takeFromPool() {
   if (warmPool.length > 0) {
-    const warm = warmPool.shift();
-    console.log(`[POOL] Tomado del pool. Quedan: ${warmPool.length}`);
-    // Rellenar en background
+    const w = warmPool.shift();
+    console.log(`[POOL] Tomado. Quedan: ${warmPool.length}`);
     fillPool().catch(() => {});
-    return warm;
+    return w;
   }
-  // Pool vacío — crear uno nuevo
-  console.log("[POOL] Pool vacío, creando nuevo...");
+  console.log("[POOL] Pool vacío, creando...");
   const browser = await launchBrowser();
   const page = await browser.newPage();
   await page.authenticate({ username: PROXY.user, password: PROXY.pass });
@@ -110,7 +99,7 @@ async function destroySession(sessionId) {
   if (s) {
     try { await s.browser.close(); } catch (e) {}
     sessions.delete(sessionId);
-    console.log(`[${sessionId}] Sesión cerrada.`);
+    console.log(`[${sessionId}] Cerrada.`);
   }
 }
 
@@ -122,65 +111,126 @@ setInterval(() => {
   }
 }, 60000);
 
-// Limpiar pool viejo (>10 min sin usar)
+// Limpiar pool viejo
 setInterval(() => {
   const now = Date.now();
   while (warmPool.length > 0 && now - warmPool[0].createdAt > 10 * 60 * 1000) {
     const old = warmPool.shift();
     old.browser.close().catch(() => {});
-    console.log("[POOL] Navegador viejo descartado.");
   }
   fillPool().catch(() => {});
 }, 60000);
 
 // ============================================================
-// HELPER: Screenshot solo del CAPTCHA
+// HELPER: Encontrar CAPTCHA (puede estar en iframe)
 // ============================================================
-async function screenshotCaptcha(page) {
-  const captchaInfo = await page.evaluate(() => {
-    // Buscar por selectores conocidos de AWS WAF CAPTCHA
-    const selectors = [
-      ".waf-captcha__stage",
-      "#captcha-container",
-      "[class*='waf-captcha']",
-      ".amzn-captcha-img-cell-container",
-    ];
-    for (const sel of selectors) {
-      const cap = document.querySelector(sel);
-      if (cap && cap.offsetHeight > 30) {
-        const rect = cap.getBoundingClientRect();
-        return { found: true, x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+async function findCaptchaElement(page) {
+  // 1) Buscar en la página principal
+  const mainResult = await page.evaluate(() => {
+    const sels = [".waf-captcha__stage", "#captcha-container", "[class*='waf-captcha']", ".amzn-captcha-img-cell-container"];
+    for (const sel of sels) {
+      const el = document.querySelector(sel);
+      if (el && el.offsetHeight > 30) {
+        const r = el.getBoundingClientRect();
+        return { found: true, x: r.x, y: r.y, width: r.width, height: r.height, inIframe: false };
       }
     }
-    // Buscar por texto visible (fallback)
-    const allDivs = document.querySelectorAll("div, section, form");
-    for (const d of allDivs) {
-      const txt = d.innerText?.toLowerCase() || "";
-      if ((txt.includes("elija todo") || txt.includes("seleccione") || txt.includes("confirma que eres")) && d.offsetHeight > 100) {
-        const rect = d.getBoundingClientRect();
-        if (rect.width > 200) return { found: true, x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    // Buscar por texto
+    for (const d of document.querySelectorAll("div, section, form")) {
+      const t = d.innerText?.toLowerCase() || "";
+      if ((t.includes("elija todo") || t.includes("seleccione") || t.includes("confirma que eres")) && d.offsetHeight > 100) {
+        const r = d.getBoundingClientRect();
+        if (r.width > 200) return { found: true, x: r.x, y: r.y, width: r.width, height: r.height, inIframe: false };
       }
     }
     return { found: false };
   });
 
-  if (!captchaInfo.found) return { found: false, screenshot: null, bounds: null };
+  if (mainResult.found) return mainResult;
 
-  const padding = 10;
+  // 2) Buscar en iframes
+  const frames = page.frames();
+  for (const frame of frames) {
+    if (frame === page.mainFrame()) continue;
+    try {
+      const iframeResult = await frame.evaluate(() => {
+        const sels = [".waf-captcha__stage", "#captcha-container", "[class*='waf-captcha']", "[class*='captcha']", ".amzn-captcha-img-cell-container"];
+        for (const sel of sels) {
+          const el = document.querySelector(sel);
+          if (el && el.offsetHeight > 30) {
+            const r = el.getBoundingClientRect();
+            return { found: true, x: r.x, y: r.y, width: r.width, height: r.height };
+          }
+        }
+        for (const d of document.querySelectorAll("div, section, form")) {
+          const t = d.innerText?.toLowerCase() || "";
+          if ((t.includes("elija todo") || t.includes("seleccione") || t.includes("select all")) && d.offsetHeight > 100) {
+            const r = d.getBoundingClientRect();
+            if (r.width > 200) return { found: true, x: r.x, y: r.y, width: r.width, height: r.height };
+          }
+        }
+        return { found: false };
+      });
+
+      if (iframeResult.found) {
+        // Obtener posición del iframe en la página principal
+        const iframeHandle = await page.evaluateHandle((url) => {
+          for (const f of document.querySelectorAll("iframe")) {
+            try { if (f.contentWindow && f.src.includes("captcha")) return f; } catch(e) {}
+          }
+          // Si no encuentra por src, buscar todos
+          for (const f of document.querySelectorAll("iframe")) {
+            if (f.offsetHeight > 100) return f;
+          }
+          return null;
+        });
+
+        const iframeBounds = await page.evaluate((el) => {
+          if (!el) return null;
+          const r = el.getBoundingClientRect();
+          return { x: r.x, y: r.y, width: r.width, height: r.height };
+        }, iframeHandle);
+
+        if (iframeBounds) {
+          return {
+            found: true,
+            x: iframeBounds.x + iframeResult.x,
+            y: iframeBounds.y + iframeResult.y,
+            width: iframeResult.width,
+            height: iframeResult.height,
+            inIframe: true,
+            iframeBounds,
+          };
+        }
+      }
+    } catch (e) {}
+  }
+
+  return { found: false };
+}
+
+// Screenshot solo del CAPTCHA
+async function screenshotCaptcha(page) {
+  const info = await findCaptchaElement(page);
+  if (!info.found) return { found: false, screenshot: null, bounds: null };
+
+  const pad = 10;
+  const clipX = Math.max(0, info.x - pad);
+  const clipY = Math.max(0, info.y - pad);
   const screenshot = await page.screenshot({
     encoding: "base64",
     clip: {
-      x: Math.max(0, captchaInfo.x - padding),
-      y: Math.max(0, captchaInfo.y - padding),
-      width: Math.min(captchaInfo.width + padding * 2, 1366),
-      height: Math.min(captchaInfo.height + padding * 2, 768),
+      x: clipX,
+      y: clipY,
+      width: Math.min(info.width + pad * 2, 1366 - clipX),
+      height: Math.min(info.height + pad * 2, 768 - clipY),
     },
   });
 
   return {
     found: true,
     screenshot: `data:image/png;base64,${screenshot}`,
-    bounds: { x: captchaInfo.x, y: captchaInfo.y, width: captchaInfo.width, height: captchaInfo.height },
+    bounds: { x: info.x, y: info.y, width: info.width, height: info.height },
   };
 }
 
@@ -188,219 +238,67 @@ async function screenshotCaptcha(page) {
 // ENDPOINTS
 // ============================================================
 
-// 1. INICIAR — Llena crédito, clic Continuar, extrae opciones OTP
-app.post("/api/start", async (req, res) => {
-  const { creditNumber } = req.body;
-  if (!creditNumber) return res.status(400).json({ error: "creditNumber requerido" });
-
+// 0. PRE-SESSION — crear sesión lista sin llenar crédito
+app.post("/api/pre-session", async (req, res) => {
   const sessionId = "s_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
-
   try {
     const { browser, page } = await takeFromPool();
     sessions.set(sessionId, { browser, page, id: sessionId, createdAt: Date.now() });
+    console.log(`[${sessionId}] Pre-session lista.`);
+    res.json({ sessionId });
+  } catch (err) {
+    console.error(`[${sessionId}] Error pre-session:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
 
-    // Llenar el campo de crédito
+// 1. INICIAR — Llena crédito, clic Continuar, detecta CAPTCHA/OTP
+app.post("/api/start", async (req, res) => {
+  const { creditNumber, sessionId: existingSessionId } = req.body;
+  if (!creditNumber) return res.status(400).json({ error: "creditNumber requerido" });
+
+  let sessionId = existingSessionId;
+  let session = sessionId ? sessions.get(sessionId) : null;
+
+  try {
+    if (!session) {
+      sessionId = "s_" + Date.now() + "_" + Math.random().toString(36).slice(2, 8);
+      const { browser, page } = await takeFromPool();
+      session = { browser, page, id: sessionId, createdAt: Date.now() };
+      sessions.set(sessionId, session);
+    }
+
+    const page = session.page;
+
+    // Llenar crédito
     console.log(`[${sessionId}] Llenando crédito: ${creditNumber}`);
     const input = await page.$("#otp-contract");
-    await input.click({ clickCount: 3 });
-    await input.type(creditNumber, { delay: 40 });
-    await new Promise((r) => setTimeout(r, 800));
+    if (!input) {
+      // Intentar con selector alternativo
+      await page.waitForSelector('input[formcontrolname="idProcess"]', { timeout: 5000 });
+      const alt = await page.$('input[formcontrolname="idProcess"]');
+      if (alt) { await alt.click({ clickCount: 3 }); await alt.type(creditNumber, { delay: 30 }); }
+    } else {
+      await input.click({ clickCount: 3 });
+      await input.type(creditNumber, { delay: 30 });
+    }
+    await new Promise((r) => setTimeout(r, 500));
 
-    // Clic en CONTINUAR automáticamente
-    console.log(`[${sessionId}] Clic en Continuar...`);
+    // Clic en CONTINUAR
+    console.log(`[${sessionId}] Clic Continuar...`);
     await page.evaluate(() => {
       const btns = [...document.querySelectorAll("button[type='submit'], button.otp-form__primary, .mat-flat-button")];
       const b = btns.find((el) => el.innerText.toLowerCase().includes("continuar"));
       if (b) b.click();
     });
 
-    // Esperar a que cargue la siguiente vista (opciones OTP)
-    await new Promise((r) => setTimeout(r, 4000));
-
-    // Extraer opciones de envío OTP (radio buttons, botones, cards, etc.)
-    const otpOptions = await page.evaluate(() => {
-      const options = [];
-      // Buscar radio buttons, mat-radio, cards clickeables, botones de opción
-      const radios = document.querySelectorAll("mat-radio-button, input[type='radio'], .mat-radio-button");
-      radios.forEach((r, i) => {
-        const label = r.innerText || r.getAttribute("aria-label") || r.closest("label")?.innerText || "";
-        const value = r.querySelector("input")?.value || r.getAttribute("value") || i.toString();
-        if (label.trim()) options.push({ type: "radio", index: i, label: label.trim(), value });
-      });
-
-      // Buscar botones/cards que digan SMS, correo, email, celular, etc.
-      if (options.length === 0) {
-        const allClickable = document.querySelectorAll("button, .mat-card, [role='button'], mat-card, .otp-option, .channel-option, a.mat-list-item, mat-list-option, .mat-selection-list mat-list-option");
-        allClickable.forEach((el, i) => {
-          const txt = el.innerText.toLowerCase();
-          if (txt.includes("sms") || txt.includes("correo") || txt.includes("email") ||
-              txt.includes("celular") || txt.includes("mensaje") || txt.includes("teléfono") ||
-              txt.includes("mail") || txt.includes("enviar")) {
-            options.push({ type: "button", index: i, label: el.innerText.trim(), value: el.innerText.trim() });
-          }
-        });
-      }
-
-      // Capturar también el texto visible de la página para contexto
-      const bodyText = document.body.innerText.substring(0, 2000);
-
-      return { options, bodyText, url: window.location.href };
-    });
-
-    // Si hay CAPTCHA visible, screenshot SOLO del elemento CAPTCHA
-    const captchaInfo = await page.evaluate(() => {
-      const selectors = [
-        ".waf-captcha__stage",
-        "#captcha-container",
-        "[class*='captcha']",
-        "#amzn-captcha-verify-image",
-        ".amzn-captcha-img-cell-container",
-      ];
-      for (const sel of selectors) {
-        const cap = document.querySelector(sel);
-        if (cap && cap.offsetHeight > 30) {
-          const rect = cap.getBoundingClientRect();
-          return {
-            found: true,
-            x: rect.x,
-            y: rect.y,
-            width: rect.width,
-            height: rect.height,
-            selector: sel,
-          };
-        }
-      }
-      // Buscar por texto "captcha" o "bolsas" o "seleccione" en la página
-      const allDivs = document.querySelectorAll("div, section, form");
-      for (const d of allDivs) {
-        const txt = d.innerText?.toLowerCase() || "";
-        if ((txt.includes("captcha") || txt.includes("elija") || txt.includes("seleccione") || txt.includes("confirma que eres")) && d.offsetHeight > 100) {
-          const rect = d.getBoundingClientRect();
-          if (rect.width > 200) {
-            return {
-              found: true,
-              x: rect.x,
-              y: rect.y,
-              width: rect.width,
-              height: rect.height,
-              selector: "text-match",
-            };
-          }
-        }
-      }
-      return { found: false };
-    });
-
-    let screenshot = null;
-    let captchaBounds = null;
-    if (captchaInfo.found) {
-      // Screenshot SOLO del área del CAPTCHA
-      screenshot = await page.screenshot({
-        encoding: "base64",
-        clip: {
-          x: Math.max(0, captchaInfo.x - 10),
-          y: Math.max(0, captchaInfo.y - 10),
-          width: Math.min(captchaInfo.width + 20, 1366),
-          height: Math.min(captchaInfo.height + 20, 768),
-        },
-      });
-      screenshot = `data:image/png;base64,${screenshot}`;
-      captchaBounds = {
-        x: captchaInfo.x,
-        y: captchaInfo.y,
-        width: captchaInfo.width,
-        height: captchaInfo.height,
-      };
-    }
-
-    console.log(`[${sessionId}] OTP opts: ${otpOptions.options.length}, CAPTCHA: ${captchaInfo.found} (${captchaInfo.selector || 'none'})`);
-
-    res.json({
-      sessionId,
-      otpOptions: otpOptions.options,
-      bodyText: otpOptions.bodyText,
-      url: otpOptions.url,
-      hasCaptcha: captchaInfo.found,
-      screenshot,
-      captchaBounds,
-    });
-
-  } catch (err) {
-    console.error(`[${sessionId}] Error start:`, err.message);
-    await destroySession(sessionId);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 1b. SELECCIONAR MÉTODO OTP — El usuario escogió SMS o correo
-app.post("/api/select-otp", async (req, res) => {
-  const { sessionId, optionIndex, optionType, optionValue } = req.body;
-  const session = sessions.get(sessionId);
-  if (!session) return res.status(404).json({ error: "Sesión no encontrada" });
-
-  try {
-    const page = session.page;
-
-    // Hacer clic en la opción que el usuario escogió
-    console.log(`[${sessionId}] Seleccionando OTP: ${optionType} index=${optionIndex} val=${optionValue}`);
-
-    if (optionType === "radio") {
-      await page.evaluate((idx) => {
-        const radios = document.querySelectorAll("mat-radio-button, input[type='radio'], .mat-radio-button");
-        if (radios[idx]) radios[idx].click();
-      }, optionIndex);
-    } else {
-      // Click en botón/card por texto
-      await page.evaluate((val) => {
-        const allClickable = document.querySelectorAll("button, .mat-card, [role='button'], mat-card, .otp-option, .channel-option, a.mat-list-item, mat-list-option, .mat-selection-list mat-list-option");
-        const match = [...allClickable].find((el) => el.innerText.trim() === val);
-        if (match) match.click();
-      }, optionValue);
-    }
-
-    await new Promise((r) => setTimeout(r, 1500));
-
-    // Buscar y hacer clic en botón de enviar/continuar si existe
-    await page.evaluate(() => {
-      const btns = [...document.querySelectorAll("button[type='submit'], button.mat-flat-button, .mat-flat-button")];
-      const b = btns.find((el) => {
-        const txt = el.innerText.toLowerCase();
-        return txt.includes("enviar") || txt.includes("continuar") || txt.includes("siguiente");
-      });
-      if (b && !b.disabled) b.click();
-    });
-
+    // Esperar a que cargue CAPTCHA o OTP (esperar menos tiempo, responder rápido)
     await new Promise((r) => setTimeout(r, 3000));
 
-    // Verificar si hay CAPTCHA ahora
+    // Detectar CAPTCHA
     const captchaResult = await screenshotCaptcha(page);
 
-    const bodyText = await page.evaluate(() => document.body.innerText.substring(0, 2000));
-
-    console.log(`[${sessionId}] OTP seleccionado. CAPTCHA: ${captchaResult.found}`);
-
-    res.json({
-      success: true,
-      hasCaptcha: captchaResult.found,
-      screenshot: captchaResult.screenshot,
-      captchaBounds: captchaResult.bounds,
-      bodyText,
-    });
-
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// 1c. DETECTAR ESTADO — ¿Hay opciones OTP o CAPTCHA?
-app.post("/api/detect-state", async (req, res) => {
-  const { sessionId } = req.body;
-  const session = sessions.get(sessionId);
-  if (!session) return res.status(404).json({ error: "Sesión no encontrada" });
-
-  try {
-    const page = session.page;
-
+    // Detectar OTP
     const otpOptions = await page.evaluate(() => {
       const options = [];
       const radios = document.querySelectorAll("mat-radio-button, input[type='radio'], .mat-radio-button");
@@ -414,7 +312,106 @@ app.post("/api/detect-state", async (req, res) => {
         allClickable.forEach((el, i) => {
           const txt = el.innerText.toLowerCase();
           if (txt.includes("sms") || txt.includes("correo") || txt.includes("email") ||
-              txt.includes("celular") || txt.includes("mensaje") || txt.includes("teléfono")) {
+              txt.includes("celular") || txt.includes("mensaje") || txt.includes("teléfono") || txt.includes("mail") || txt.includes("enviar")) {
+            options.push({ type: "button", index: i, label: el.innerText.trim(), value: el.innerText.trim() });
+          }
+        });
+      }
+      return options;
+    });
+
+    const bodyText = await page.evaluate(() => document.body.innerText.substring(0, 2000));
+
+    console.log(`[${sessionId}] OTP: ${otpOptions.length}, CAPTCHA: ${captchaResult.found}`);
+
+    res.json({
+      sessionId,
+      otpOptions,
+      bodyText,
+      hasCaptcha: captchaResult.found,
+      screenshot: captchaResult.screenshot,
+      captchaBounds: captchaResult.bounds,
+    });
+
+  } catch (err) {
+    console.error(`[${sessionId}] Error start:`, err.message);
+    await destroySession(sessionId);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 1b. SELECCIONAR MÉTODO OTP
+app.post("/api/select-otp", async (req, res) => {
+  const { sessionId, optionIndex, optionType, optionValue } = req.body;
+  const session = sessions.get(sessionId);
+  if (!session) return res.status(404).json({ error: "Sesión no encontrada" });
+
+  try {
+    const page = session.page;
+    console.log(`[${sessionId}] OTP: ${optionType} idx=${optionIndex}`);
+
+    if (optionType === "radio") {
+      await page.evaluate((idx) => {
+        const radios = document.querySelectorAll("mat-radio-button, input[type='radio'], .mat-radio-button");
+        if (radios[idx]) radios[idx].click();
+      }, optionIndex);
+    } else {
+      await page.evaluate((val) => {
+        const all = document.querySelectorAll("button, .mat-card, [role='button'], mat-card, .otp-option, .channel-option, a.mat-list-item, mat-list-option, .mat-selection-list mat-list-option");
+        const m = [...all].find((el) => el.innerText.trim() === val);
+        if (m) m.click();
+      }, optionValue);
+    }
+
+    await new Promise((r) => setTimeout(r, 1500));
+
+    await page.evaluate(() => {
+      const btns = [...document.querySelectorAll("button[type='submit'], button.mat-flat-button, .mat-flat-button")];
+      const b = btns.find((el) => {
+        const t = el.innerText.toLowerCase();
+        return t.includes("enviar") || t.includes("continuar") || t.includes("siguiente");
+      });
+      if (b && !b.disabled) b.click();
+    });
+
+    await new Promise((r) => setTimeout(r, 3000));
+
+    const captchaResult = await screenshotCaptcha(page);
+    const bodyText = await page.evaluate(() => document.body.innerText.substring(0, 2000));
+
+    res.json({
+      success: true,
+      hasCaptcha: captchaResult.found,
+      screenshot: captchaResult.screenshot,
+      captchaBounds: captchaResult.bounds,
+      bodyText,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 1c. DETECTAR ESTADO
+app.post("/api/detect-state", async (req, res) => {
+  const { sessionId } = req.body;
+  const session = sessions.get(sessionId);
+  if (!session) return res.status(404).json({ error: "Sesión no encontrada" });
+
+  try {
+    const page = session.page;
+    const otpOptions = await page.evaluate(() => {
+      const options = [];
+      const radios = document.querySelectorAll("mat-radio-button, input[type='radio'], .mat-radio-button");
+      radios.forEach((r, i) => {
+        const label = r.innerText || r.getAttribute("aria-label") || r.closest("label")?.innerText || "";
+        const value = r.querySelector("input")?.value || r.getAttribute("value") || i.toString();
+        if (label.trim()) options.push({ type: "radio", index: i, label: label.trim(), value });
+      });
+      if (options.length === 0) {
+        const all = document.querySelectorAll("button, .mat-card, [role='button'], mat-card, .otp-option, .channel-option, a.mat-list-item, mat-list-option");
+        all.forEach((el, i) => {
+          const t = el.innerText.toLowerCase();
+          if (t.includes("sms") || t.includes("correo") || t.includes("email") || t.includes("celular") || t.includes("mensaje") || t.includes("teléfono")) {
             options.push({ type: "button", index: i, label: el.innerText.trim(), value: el.innerText.trim() });
           }
         });
@@ -423,7 +420,6 @@ app.post("/api/detect-state", async (req, res) => {
     });
 
     const captchaResult = await screenshotCaptcha(page);
-
     const bodyText = await page.evaluate(() => document.body.innerText.substring(0, 2000));
 
     res.json({ otpOptions, hasCaptcha: captchaResult.found, screenshot: captchaResult.screenshot, captchaBounds: captchaResult.bounds, bodyText });
@@ -432,7 +428,7 @@ app.post("/api/detect-state", async (req, res) => {
   }
 });
 
-// 2. SCREENSHOT (del CAPTCHA si está visible, si no fullpage)
+// 2. SCREENSHOT
 app.post("/api/screenshot", async (req, res) => {
   const { sessionId } = req.body;
   const session = sessions.get(sessionId);
@@ -451,67 +447,27 @@ app.post("/api/screenshot", async (req, res) => {
   }
 });
 
-// 3. CLICK en coordenadas del CAPTCHA (relativas al elemento)
+// 3. CLICK en CAPTCHA (coordenadas absolutas de viewport)
 app.post("/api/click", async (req, res) => {
   const { sessionId, x, y, captchaBounds } = req.body;
   const session = sessions.get(sessionId);
   if (!session) return res.status(404).json({ error: "Sesión no encontrada" });
 
   try {
-    // Si vienen bounds del CAPTCHA, sumar el offset para click absoluto en la página
-    let absX = x;
-    let absY = y;
+    let absX = x, absY = y;
     if (captchaBounds) {
       absX = captchaBounds.x + x;
       absY = captchaBounds.y + y;
     }
-
-    console.log(`[${sessionId}] Click CAPTCHA: rel(${x},${y}) → abs(${absX},${absY})`);
+    console.log(`[${sessionId}] Click: rel(${x},${y}) → abs(${absX},${absY})`);
     await session.page.mouse.click(absX, absY);
-    await new Promise((r) => setTimeout(r, 800));
+    await new Promise((r) => setTimeout(r, 300));
 
-    // Re-screenshot solo del CAPTCHA
-    const captchaInfo = await session.page.evaluate(() => {
-      const selectors = [".waf-captcha__stage", "#captcha-container", "[class*='captcha']"];
-      for (const sel of selectors) {
-        const cap = document.querySelector(sel);
-        if (cap && cap.offsetHeight > 30) {
-          const rect = cap.getBoundingClientRect();
-          return { found: true, x: rect.x, y: rect.y, width: rect.width, height: rect.height };
-        }
-      }
-      const allDivs = document.querySelectorAll("div, section, form");
-      for (const d of allDivs) {
-        const txt = d.innerText?.toLowerCase() || "";
-        if ((txt.includes("captcha") || txt.includes("elija") || txt.includes("seleccione") || txt.includes("confirma que eres")) && d.offsetHeight > 100) {
-          const rect = d.getBoundingClientRect();
-          if (rect.width > 200) return { found: true, x: rect.x, y: rect.y, width: rect.width, height: rect.height };
-        }
-      }
-      return { found: false };
-    });
-
-    let screenshot;
-    let newBounds = null;
-    if (captchaInfo.found) {
-      screenshot = await session.page.screenshot({
-        encoding: "base64",
-        clip: {
-          x: Math.max(0, captchaInfo.x - 10),
-          y: Math.max(0, captchaInfo.y - 10),
-          width: Math.min(captchaInfo.width + 20, 1366),
-          height: Math.min(captchaInfo.height + 20, 768),
-        },
-      });
-      newBounds = { x: captchaInfo.x, y: captchaInfo.y, width: captchaInfo.width, height: captchaInfo.height };
-    } else {
-      screenshot = await session.page.screenshot({ encoding: "base64", fullPage: false });
-    }
-
+    const captchaResult = await screenshotCaptcha(session.page);
     res.json({
-      screenshot: `data:image/png;base64,${screenshot}`,
-      captchaBounds: newBounds,
-      captchaStillVisible: captchaInfo.found,
+      screenshot: captchaResult.screenshot || null,
+      captchaBounds: captchaResult.bounds,
+      captchaStillVisible: captchaResult.found,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -525,23 +481,20 @@ app.post("/api/click-button", async (req, res) => {
   if (!session) return res.status(404).json({ error: "Sesión no encontrada" });
 
   try {
-    const page = session.page;
-    const clicked = await page.evaluate((btnText) => {
+    const clicked = await session.page.evaluate((btnText) => {
       const btns = [...document.querySelectorAll("button, a, [role='button'], .mat-flat-button")];
       const b = btns.find((el) => el.innerText.toLowerCase().includes(btnText.toLowerCase()));
       if (b) { b.click(); return true; }
       return false;
     }, text);
-
     await new Promise((r) => setTimeout(r, 2000));
-    const screenshot = await page.screenshot({ encoding: "base64", fullPage: false });
-    res.json({ clicked, screenshot: `data:image/png;base64,${screenshot}` });
+    res.json({ clicked });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// 5. ESCRIBIR en un campo (para OTP)
+// 5. ESCRIBIR (OTP)
 app.post("/api/type", async (req, res) => {
   const { sessionId, selector, text } = req.body;
   const session = sessions.get(sessionId);
@@ -557,14 +510,13 @@ app.post("/api/type", async (req, res) => {
       await page.keyboard.type(text, { delay: 40 });
     }
     await new Promise((r) => setTimeout(r, 1000));
-    const screenshot = await page.screenshot({ encoding: "base64", fullPage: false });
-    res.json({ screenshot: `data:image/png;base64,${screenshot}` });
+    res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// 6. EXTRAER DATOS de la página
+// 6. EXTRAER DATOS
 app.post("/api/extract", async (req, res) => {
   const { sessionId } = req.body;
   const session = sessions.get(sessionId);
@@ -583,7 +535,7 @@ app.post("/api/extract", async (req, res) => {
   }
 });
 
-// 7. CERRAR SESIÓN
+// 7. CERRAR
 app.post("/api/close", async (req, res) => {
   const { sessionId } = req.body;
   await destroySession(sessionId);
@@ -596,7 +548,7 @@ app.get("/api/health", (req, res) => {
 });
 
 // ============================================================
-// WEBSOCKET MIRROR — espejo del CAPTCHA en tiempo real
+// WEBSOCKET MIRROR — espejo CAPTCHA en tiempo real
 // ============================================================
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, path: "/ws" });
@@ -604,25 +556,29 @@ const wss = new WebSocketServer({ server, path: "/ws" });
 wss.on("connection", (ws) => {
   let mirrorInterval = null;
   let wsSessionId = null;
+  let clickLock = false; // evitar clicks simultáneos
 
   ws.on("message", async (raw) => {
     try {
       const msg = JSON.parse(raw);
 
-      // START MIRROR — empezar a enviar frames del CAPTCHA
       if (msg.type === "start-mirror") {
         wsSessionId = msg.sessionId;
         const session = sessions.get(wsSessionId);
         if (!session) { ws.send(JSON.stringify({ type: "error", msg: "Sesión no encontrada" })); return; }
 
-        // Enviar frame inicial
+        // Frame inicial
         const initial = await screenshotCaptcha(session.page);
-        if (initial.found) {
+        if (initial.found && ws.readyState === 1) {
           ws.send(JSON.stringify({ type: "frame", screenshot: initial.screenshot, bounds: initial.bounds }));
         }
 
-        // Loop: enviar frame cada 300ms (como video)
+        // Limpiar interval anterior si existe
+        if (mirrorInterval) clearInterval(mirrorInterval);
+
+        // Loop cada 200ms
         mirrorInterval = setInterval(async () => {
+          if (clickLock) return; // no enviar frame durante click
           try {
             const s = sessions.get(wsSessionId);
             if (!s || ws.readyState !== 1) { clearInterval(mirrorInterval); return; }
@@ -630,19 +586,21 @@ wss.on("connection", (ws) => {
             if (frame.found) {
               ws.send(JSON.stringify({ type: "frame", screenshot: frame.screenshot, bounds: frame.bounds }));
             } else {
-              // CAPTCHA desapareció
               ws.send(JSON.stringify({ type: "captcha-gone" }));
               clearInterval(mirrorInterval);
               mirrorInterval = null;
             }
           } catch (e) {}
-        }, 300);
+        }, 200);
       }
 
-      // CLICK — usuario hizo clic en el CAPTCHA
+      // CLICK — clic del usuario en el CAPTCHA
       if (msg.type === "click") {
-        const session = sessions.get(wsSessionId || msg.sessionId);
-        if (!session) return;
+        const sid = wsSessionId || msg.sessionId;
+        const session = sessions.get(sid);
+        if (!session || clickLock) return;
+
+        clickLock = true;
 
         let absX = msg.x, absY = msg.y;
         if (msg.bounds) {
@@ -650,25 +608,29 @@ wss.on("connection", (ws) => {
           absY = msg.bounds.y + msg.y;
         }
 
+        console.log(`[WS] Click: (${msg.x},${msg.y}) → abs(${absX},${absY})`);
         await session.page.mouse.click(absX, absY);
-        await new Promise((r) => setTimeout(r, 400));
 
-        // Enviar frame actualizado inmediatamente
+        // Esperar que la UI del CAPTCHA reaccione y enviar frame inmediato
+        await new Promise((r) => setTimeout(r, 150));
         const frame = await screenshotCaptcha(session.page);
-        if (frame.found) {
-          ws.send(JSON.stringify({ type: "frame", screenshot: frame.screenshot, bounds: frame.bounds }));
-        } else {
-          ws.send(JSON.stringify({ type: "captcha-gone" }));
-          if (mirrorInterval) { clearInterval(mirrorInterval); mirrorInterval = null; }
+        if (ws.readyState === 1) {
+          if (frame.found) {
+            ws.send(JSON.stringify({ type: "frame", screenshot: frame.screenshot, bounds: frame.bounds }));
+          } else {
+            ws.send(JSON.stringify({ type: "captcha-gone" }));
+            if (mirrorInterval) { clearInterval(mirrorInterval); mirrorInterval = null; }
+          }
         }
+
+        clickLock = false;
       }
 
-      // STOP MIRROR
       if (msg.type === "stop-mirror") {
         if (mirrorInterval) { clearInterval(mirrorInterval); mirrorInterval = null; }
       }
 
-    } catch (e) {}
+    } catch (e) { console.error("[WS] Error:", e.message); }
   });
 
   ws.on("close", () => {
@@ -681,7 +643,7 @@ wss.on("connection", (ws) => {
 // ============================================================
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, async () => {
-  console.log(`Mobilize Puppeteer + Geonode + WS → http://localhost:${PORT}`);
-  console.log("[POOL] Pre-calentando navegadores...");
-  fillPool().catch((e) => console.error("[POOL] Error inicial:", e.message));
+  console.log(`Mobilize Puppeteer + WS → http://localhost:${PORT}`);
+  console.log("[POOL] Pre-calentando...");
+  fillPool().catch((e) => console.error("[POOL]", e.message));
 });
